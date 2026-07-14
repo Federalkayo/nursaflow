@@ -44,7 +44,7 @@ class DocumentStatusCard extends StatelessWidget {
             style: AppTextStyles.labelLg(),
           ),
           const SizedBox(height: 2),
-          Text(document.course, style: AppTextStyles.bodySm()),
+          Text(document.course, style: AppTextStyles.bodySm(), maxLines: 1, overflow: TextOverflow.ellipsis),
           const Spacer(),
           if (isReady) ...[
             ClipRRect(
@@ -58,8 +58,15 @@ class DocumentStatusCard extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('${(document.progress * 100).round()}% mastered',
-                    style: AppTextStyles.labelSm()),
+                Expanded(
+                  child: Text(
+                    '${(document.progress * 100).round()}% mastered',
+                    style: AppTextStyles.labelSm(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
                 Row(
                   children: [
                     _QuickIcon(

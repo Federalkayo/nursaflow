@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import '../../core/theme/app_colors.dart';
@@ -11,12 +13,15 @@ import 'widgets/document_status_card.dart';
 import 'widgets/streak_chip.dart';
 import 'models/document.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final docs = mockDocuments;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final documentsAsync = ref.watch(userDocumentsProvider);
+    final user = FirebaseAuth.instance.currentUser;
+    final fullName = user?.displayName ?? 'User';
+    final firstName = fullName.split(' ').first;
 
     return Scaffold(
       body: SafeArea(
@@ -33,7 +38,7 @@ class HomeScreen extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text('Good morning,', style: AppTextStyles.bodyMd()),
-                        Text('Sarah', style: AppTextStyles.headlineLgMobile()),
+                        Text(firstName, style: AppTextStyles.headlineLgMobile()),
                       ],
                     ),
                     const StreakChip(days: 5),
@@ -47,7 +52,16 @@ class HomeScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const SizedBox(height: AppSpacing.md),
-                    _QuickStatsRow(),
+                    
+                    documentsAsync.when(
+                      data: (docs) => _QuickStatsRow(docs: docs),
+                      loading: () => const Center(child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: AppSpacing.sm),
+                        child: CircularProgressIndicator(),
+                      )),
+                      error: (err, stack) => const SizedBox(),
+                    ),
+                    
                     const SizedBox(height: AppSpacing.lg),
 
                     // Prominent upload CTA
@@ -108,30 +122,54 @@ class HomeScreen extends StatelessWidget {
 
             // Horizontal doc list on mobile, grid on wider screens
             SliverToBoxAdapter(
-              child: Responsive.isMobile(context)
-                  ? SizedBox(
-                      height: 168,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.containerMargin),
-                        itemCount: docs.length,
-                        separatorBuilder: (_, __) =>
-                            const SizedBox(width: AppSpacing.sm),
-                        itemBuilder: (context, i) => SizedBox(
-                          width: 220,
-                          child: DocumentStatusCard(document: docs[i]),
-                        ),
+              child: documentsAsync.when(
+                data: (docs) {
+                  if (docs.isEmpty) {
+                    return const Center(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: AppSpacing.lg),
+                        child: Text('No documents uploaded yet.'),
                       ),
-                    )
-                  : ResponsivePage(
-                      child: ResponsiveGrid(
-                        childAspectRatio: 1.6,
-                        children: [
-                          for (final d in docs) DocumentStatusCard(document: d),
-                        ],
-                      ),
-                    ),
+                    );
+                  }
+                  return Responsive.isMobile(context)
+                      ? SizedBox(
+                          height: 200,
+                          child: ListView.separated(
+                            scrollDirection: Axis.horizontal,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: AppSpacing.containerMargin),
+                            itemCount: docs.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(width: AppSpacing.sm),
+                            itemBuilder: (context, i) => SizedBox(
+                              width: 220,
+                              child: DocumentStatusCard(document: docs[i]),
+                            ),
+                          ),
+                        )
+                      : ResponsivePage(
+                          child: ResponsiveGrid(
+                            childAspectRatio: 1.6,
+                            children: [
+                              for (final d in docs) DocumentStatusCard(document: d),
+                            ],
+                          ),
+                        );
+                },
+                loading: () => const Center(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: AppSpacing.lg),
+                    child: CircularProgressIndicator(),
+                  ),
+                ),
+                error: (err, stack) => Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
+                    child: Text('Error: $err'),
+                  ),
+                ),
+              ),
             ),
 
             SliverToBoxAdapter(
@@ -161,7 +199,7 @@ class HomeScreen extends StatelessWidget {
                         ],
                       ),
                     ),
-                    const SizedBox(height: AppSpacing.xl),
+                    SizedBox(height: Responsive.isMobile(context) ? 100 : AppSpacing.xl),
                   ],
                 ),
               ),
@@ -174,17 +212,26 @@ class HomeScreen extends StatelessWidget {
 }
 
 class _QuickStatsRow extends StatelessWidget {
+  const _QuickStatsRow({required this.docs});
+  final List<StudyDocument> docs;
+
   @override
   Widget build(BuildContext context) {
-    return const Row(
+    final totalDocs = docs.length;
+    final scoredDocs = docs.where((d) => d.progress > 0).toList();
+    final avgScore = scoredDocs.isEmpty 
+        ? '0%' 
+        : '${(scoredDocs.map((d) => d.progress).reduce((a, b) => a + b) / scoredDocs.length * 100).round()}%';
+
+    return Row(
       children: [
         Expanded(
-            child: _StatPill(icon: Symbols.description, value: '48', label: 'Docs')),
-        SizedBox(width: AppSpacing.sm),
+            child: _StatPill(icon: Symbols.description, value: '$totalDocs', label: 'Docs')),
+        const SizedBox(width: AppSpacing.sm),
         Expanded(
-            child: _StatPill(icon: Symbols.quiz, value: '92%', label: 'Avg. score')),
-        SizedBox(width: AppSpacing.sm),
-        Expanded(
+            child: _StatPill(icon: Symbols.quiz, value: avgScore, label: 'Avg. score')),
+        const SizedBox(width: AppSpacing.sm),
+        const Expanded(
             child: _StatPill(
                 icon: Symbols.event_upcoming, value: '3d', label: 'Next exam')),
       ],

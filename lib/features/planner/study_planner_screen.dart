@@ -6,6 +6,7 @@ import '../../core/theme/app_text_styles.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_card.dart';
 import '../../core/widgets/responsive_page.dart';
+import '../../core/utils/responsive.dart';
 
 class _Task {
   _Task({required this.title, required this.subtitle, this.disabled = false});
@@ -52,10 +53,16 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Study Planner')),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _addExamDate,
-        icon: const Icon(Symbols.add),
-        label: const Text('Add Exam Date'),
+      floatingActionButton: Padding(
+        padding: EdgeInsets.only(
+          bottom: Responsive.isMobile(context) ? 80.0 : 0.0,
+        ),
+        child: FloatingActionButton.extended(
+          heroTag: null,
+          onPressed: _addExamDate,
+          icon: const Icon(Symbols.add),
+          label: const Text('Add Exam Date'),
+        ),
       ),
       body: SafeArea(
         child: ResponsivePage(

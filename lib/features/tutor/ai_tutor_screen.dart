@@ -1,19 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/widgets/responsive_page.dart';
-
-enum _Sender { ai, user }
-
-class _ChatMessage {
-  _ChatMessage({required this.sender, required this.text, required this.time});
-  final _Sender sender;
-  final String text;
-  final DateTime time;
-}
+import 'models/chat_message.dart';
 
 const _suggestedPrompts = [
   'Give me a mnemonic',
@@ -22,59 +17,78 @@ const _suggestedPrompts = [
   'Quiz me on this',
 ];
 
-class AiTutorScreen extends StatefulWidget {
+class AiTutorScreen extends ConsumerStatefulWidget {
   const AiTutorScreen({super.key, this.documentId});
   final String? documentId;
 
   @override
-  State<AiTutorScreen> createState() => _AiTutorScreenState();
+  ConsumerState<AiTutorScreen> createState() => _AiTutorScreenState();
 }
 
-class _AiTutorScreenState extends State<AiTutorScreen> {
+class _AiTutorScreenState extends ConsumerState<AiTutorScreen> {
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
   bool _isThinking = false;
 
-  late final List<_ChatMessage> _messages = [
-    _ChatMessage(
-      sender: _Sender.ai,
-      text: widget.documentId != null
-          ? "I've analyzed your notes on Renal Health. How can I help you today?"
-          : 'Hi! Ask me anything about your nursing coursework — I\'ll use your uploaded notes as context whenever relevant.',
-      time: DateTime.now(),
-    ),
-  ];
-
-  void _send([String? preset]) {
+  Future<void> _send([String? preset]) async {
     final text = preset ?? _controller.text.trim();
     if (text.isEmpty) return;
-    setState(() {
-      _messages.add(_ChatMessage(sender: _Sender.user, text: text, time: DateTime.now()));
-      _isThinking = true;
-      _controller.clear();
-    });
-    _scrollToBottom();
 
-    // TODO: replace with a call to the `askTutor` Cloud Function, which
-    // forwards to Gemini via Firebase AI Logic with the document's extracted
-    // text (and prior chat turns) as context.
-    Future.delayed(const Duration(milliseconds: 900), () {
-      if (!mounted) return;
-      setState(() {
-        _isThinking = false;
-        _messages.add(_ChatMessage(
-          sender: _Sender.ai,
-          text: _mockResponseFor(text),
-          time: DateTime.now(),
-        ));
+    _controller.clear();
+    setState(() {
+      _isThinking = true;
+    });
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final docRef = FirebaseFirestore.instance.collection('users').doc(user.uid);
+    final chatCollection = widget.documentId != null
+        ? docRef.collection('documents').doc(widget.documentId!).collection('messages')
+        : docRef.collection('general_messages');
+
+    try {
+      // 1. Save user message to Firestore
+      await chatCollection.add({
+        'sender': TutorSender.user.name,
+        'text': text,
+        'timestamp': FieldValue.serverTimestamp(),
       });
       _scrollToBottom();
-    });
+
+      // 2. Generate simulated response after a small delay
+      Future.delayed(const Duration(milliseconds: 1000), () async {
+        final responseText = _mockResponseFor(text);
+        await chatCollection.add({
+          'sender': TutorSender.ai.name,
+          'text': responseText,
+          'timestamp': FieldValue.serverTimestamp(),
+        });
+
+        if (mounted) {
+          setState(() {
+            _isThinking = false;
+          });
+          _scrollToBottom();
+        }
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _isThinking = false;
+        });
+      }
+    }
   }
 
   String _mockResponseFor(String prompt) {
-    if (prompt.toLowerCase().contains('mnemonic')) {
+    final p = prompt.toLowerCase();
+    if (p.contains('mnemonic')) {
       return 'Sure — for cranial nerves, try: "Oh Oh Oh To Touch And Feel Very Green Vegetables AH!" (Olfactory, Optic, Oculomotor, Trochlear, Trigeminal, Abducens, Facial, Vestibulocochlear, Glossopharyngeal, Vagus, Accessory, Hypoglossal).';
+    } else if (p.contains('summary')) {
+      return 'Here is a high-level summary of Renal Function: \n- Glomerular Filtration: Filters waste and excess water from blood.\n- Tubular Reabsorption: Returns essential substances (water, glucose, electrolytes) to blood.\n- Tubular Secretion: Secretes ions and waste products into filtrate.';
+    } else if (p.contains('quiz')) {
+      return 'Quick Quiz: Which hormone regulates water reabsorption in the collecting ducts? (A) Aldosterone, (B) ADH, (C) Renin. Reply with your choice!';
     }
     return "Glomerular filtration rate (GFR) is essentially how fast your kidneys filter blood. Think of it as a speedometer for kidney function — a normal GFR sits around 90-120 mL/min. When it drops below 60 for 3+ months, that's a signal of chronic kidney disease.";
   }
@@ -99,6 +113,8 @@ class _AiTutorScreenState extends State<AiTutorScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final messagesAsync = ref.watch(tutorMessagesProvider(widget.documentId));
+
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(icon: const Icon(Symbols.arrow_back), onPressed: () => context.pop()),
@@ -115,15 +131,37 @@ class _AiTutorScreenState extends State<AiTutorScreen> {
         child: Column(
           children: [
             Expanded(
-              child: ListView.builder(
-                controller: _scrollController,
-                padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.containerMargin, vertical: AppSpacing.md),
-                itemCount: _messages.length + (_isThinking ? 1 : 0),
-                itemBuilder: (context, i) {
-                  if (i == _messages.length) return const _TypingBubble();
-                  return _MessageBubble(message: _messages[i]);
+              child: messagesAsync.when(
+                data: (firestoreMessages) {
+                  final messages = firestoreMessages.isNotEmpty
+                      ? firestoreMessages
+                      : [
+                          TutorChatMessage(
+                            id: 'welcome',
+                            sender: TutorSender.ai,
+                            text: widget.documentId != null
+                                ? "I've analyzed your notes. How can I help you today?"
+                                : 'Hi! Ask me anything about your nursing coursework — I\'ll use your uploaded notes as context whenever relevant.',
+                            timestamp: DateTime.now(),
+                          )
+                        ];
+
+                  // Trigger scroll after build
+                  WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+
+                  return ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.containerMargin, vertical: AppSpacing.md),
+                    itemCount: messages.length + (_isThinking ? 1 : 0),
+                    itemBuilder: (context, i) {
+                      if (i == messages.length) return const _TypingBubble();
+                      return _MessageBubble(message: messages[i]);
+                    },
+                  );
                 },
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (err, stack) => Center(child: Text('Error loading chat history: $err')),
               ),
             ),
             if (widget.documentId != null)
@@ -191,11 +229,11 @@ class _AiTutorScreenState extends State<AiTutorScreen> {
 
 class _MessageBubble extends StatelessWidget {
   const _MessageBubble({required this.message});
-  final _ChatMessage message;
+  final TutorChatMessage message;
 
   @override
   Widget build(BuildContext context) {
-    final isAi = message.sender == _Sender.ai;
+    final isAi = message.sender == TutorSender.ai;
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.sm),
       child: Row(

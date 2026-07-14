@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import '../../core/theme/app_colors.dart';
@@ -43,8 +44,8 @@ class ProfileScreen extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: AppSpacing.sm),
-                    Text('Sarah Jenkins', style: AppTextStyles.headlineMd()),
-                    Text('Senior Nursing Student • St. Jude Medical',
+                    Text(FirebaseAuth.instance.currentUser?.displayName ?? 'User', style: AppTextStyles.headlineMd()),
+                    Text(FirebaseAuth.instance.currentUser?.email ?? 'Senior Nursing Student • St. Jude Medical',
                         style: AppTextStyles.bodySm()),
                   ],
                 ),
@@ -139,7 +140,12 @@ class ProfileScreen extends StatelessWidget {
                       title: 'Logout',
                       subtitle: 'Sign out of your account',
                       titleColor: AppColors.error,
-                      onTap: () => context.go('/auth'),
+                      onTap: () async {
+                        await FirebaseAuth.instance.signOut();
+                        if (context.mounted) {
+                          context.go('/auth');
+                        }
+                      },
                     ),
                   ],
                 ),
