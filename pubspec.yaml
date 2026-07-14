@@ -1,0 +1,61 @@
+name: nursaflow
+description: "NursaFlow — AI Study Companion for Nursing Students"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management
+  flutter_riverpod: ^2.5.1
+
+  # Routing
+  go_router: ^14.2.0
+
+  # Fonts (Manrope for headlines, Inter for body — matches Clinical Clarity design system)
+  google_fonts: ^6.2.1
+
+  # Icons — Material Symbols used throughout the Stitch design
+  material_symbols_icons: ^4.2719.3
+
+  # Firebase
+  firebase_core: ^3.4.0
+  firebase_auth: ^5.2.0
+  cloud_firestore: ^5.4.0
+  firebase_storage: ^12.3.0
+  cloud_functions: ^5.1.0
+  google_sign_in: ^6.2.1
+
+  # File picking for lecture note uploads
+  file_picker: ^8.1.2
+
+  # Local persistence (offline cache, onboarding "seen" flag)
+  shared_preferences: ^2.3.2
+
+  # Charts for study analytics (Phase 2 ready)
+  fl_chart: ^0.69.0
+
+  # Utilities
+  intl: ^0.19.0
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+
+  fonts: []
+  # NOTE: We load Manrope + Inter via google_fonts at runtime (matches Stitch export).
+  # If you want to bundle fonts offline instead, drop the .ttf files into assets/fonts/
+  # and register them here.
+
+  assets:
+    - assets/images/
+    - assets/icons/

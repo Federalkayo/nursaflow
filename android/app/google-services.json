@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "470077566635",
+    "project_id": "nursaflow-14208",
+    "storage_bucket": "nursaflow-14208.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:470077566635:android:9adf2fbc9d0684be8e91ee",
+        "android_client_info": {
+          "package_name": "com.example.nursaflow"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB4u1UjNexKWG145BmwVFLC3PBXoOmDeMw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
