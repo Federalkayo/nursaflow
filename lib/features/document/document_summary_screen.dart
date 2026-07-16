@@ -10,6 +10,7 @@ import '../../core/widgets/app_buttons.dart';
 import '../../core/widgets/app_card.dart';
 import '../../core/widgets/mermaid_view.dart';
 import '../../core/widgets/responsive_page.dart';
+import '../../core/widgets/zoomable_image_view.dart';
 import '../home/models/document.dart';
 
 class DocumentSummaryScreen extends ConsumerWidget {
@@ -174,12 +175,10 @@ class DocumentSummaryScreen extends ConsumerWidget {
                                   ],
                                 ),
                               ),
-                              // Quote card is now AI-generated per document
-                              // (doc.keyQuote) instead of a hardcoded
-                              // pediatric quote that showed on every
-                              // document regardless of topic. Hidden
-                              // entirely when the document has no quote —
-                              // never falls back to a wrong/generic one.
+                              // AI-generated per document (doc.keyQuote), not
+                              // a hardcoded quote — hidden entirely when the
+                              // document has none rather than showing a
+                              // wrong/generic one.
                               if (doc.keyQuote != null && doc.keyQuote!.trim().isNotEmpty) ...[
                                 const SizedBox(height: AppSpacing.sm),
                                 Container(
@@ -217,13 +216,10 @@ class DocumentSummaryScreen extends ConsumerWidget {
                             children: [
                               const _SectionTitle(icon: Symbols.stethoscope, title: 'Assessment Hierarchy'),
                               const SizedBox(height: AppSpacing.sm),
-                              // Same fix as the quote card above: this used
-                              // to be a hardcoded pediatric-specific line
-                              // shown for every document. Now pulled from
-                              // doc.assessmentNote, with a neutral
-                              // (non-pediatric) fallback when Groq judged
-                              // this topic has no real assessment note to
-                              // give (e.g. purely anatomical topics).
+                              // AI-generated per document (doc.assessmentNote),
+                              // with a neutral (non-pediatric) fallback when
+                              // Groq judged this topic has no real assessment
+                              // note to give.
                               Text(
                                 (doc.assessmentNote != null && doc.assessmentNote!.trim().isNotEmpty)
                                     ? doc.assessmentNote!
@@ -413,7 +409,8 @@ class _SegmentedTabs extends StatelessWidget {
 /// URL client-side, so access still goes through Storage security rules
 /// (only the signed-in owner can read their own path). Shows a skeleton
 /// while loading and disappears gracefully if the image ever fails to load
-/// rather than breaking the rest of the summary screen.
+/// rather than breaking the rest of the summary screen. Tappable — opens
+/// the shared ZoomableImageView for pinch-to-zoom.
 class _DocumentIllustration extends StatelessWidget {
   const _DocumentIllustration({required this.path});
   final String path;
@@ -444,14 +441,23 @@ class _DocumentIllustration extends StatelessWidget {
           // rest of the summary is still fully usable without it.
           return const SizedBox.shrink();
         }
+        final url = snapshot.data!;
         return ClipRRect(
           borderRadius: BorderRadius.circular(AppRadius.card),
-          child: Image.network(
-            snapshot.data!,
-            width: double.infinity,
-            height: 200,
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stack) => const SizedBox.shrink(),
+          child: GestureDetector(
+            onTap: () => ZoomableImageView.open(context, url),
+            child: Stack(
+              children: [
+                Image.network(
+                  url,
+                  width: double.infinity,
+                  height: 200,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stack) => const SizedBox.shrink(),
+                ),
+                ExpandButton(onTap: () => ZoomableImageView.open(context, url)),
+              ],
+            ),
           ),
         );
       },

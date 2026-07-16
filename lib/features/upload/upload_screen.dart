@@ -39,7 +39,7 @@ class _UploadScreenState extends ConsumerState<UploadScreen> {
   _UploadState _state = _UploadState.idle;
   String? _fileName;
   FilePickerResult? _pickedFileResult;
-  late List<String> _courses = List.of(_defaultCourses);
+  late final List<String> _courses = List.of(_defaultCourses);
   String _selectedCourse = _defaultCourses.first;
   final Set<String> _selectedTags = {};
 

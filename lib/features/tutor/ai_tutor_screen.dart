@@ -11,6 +11,7 @@ import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/widgets/mermaid_view.dart';
 import '../../core/widgets/responsive_page.dart';
+import '../../core/widgets/zoomable_image_view.dart';
 import 'models/chat_message.dart';
 
 const _suggestedPrompts = [
@@ -231,25 +232,12 @@ class _AiTutorScreenState extends ConsumerState<AiTutorScreen> {
 
 /// Resolves a Storage path to a download URL client-side (respecting
 /// Storage security rules) and displays it, with a loading skeleton and
-/// silent fail-through if the image can't be loaded.
-///
-/// Tappable — opens a fullscreen pinch-to-zoom view (InteractiveViewer),
-/// mirroring the expand affordance already used on Mermaid diagrams, but
-/// with pinch/pan gestures instead of a static larger view since that's
-/// the natural interaction for a photo/illustration.
+/// silent fail-through if the image can't be loaded. Tappable — opens the
+/// shared ZoomableImageView for pinch-to-zoom, same as the document
+/// illustration on the summary screen.
 class _ChatImage extends StatelessWidget {
   const _ChatImage({required this.path});
   final String path;
-
-  void _openFullscreen(BuildContext context, String url) {
-    Navigator.of(context).push(
-      PageRouteBuilder(
-        opaque: false,
-        barrierColor: Colors.black87,
-        pageBuilder: (context, _, __) => _ImageFullscreenView(imageUrl: url),
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -274,7 +262,7 @@ class _ChatImage extends StatelessWidget {
 
         final url = snapshot.data!;
         return GestureDetector(
-          onTap: () => _openFullscreen(context, url),
+          onTap: () => ZoomableImageView.open(context, url),
           child: Stack(
             children: [
               Image.network(
@@ -284,95 +272,11 @@ class _ChatImage extends StatelessWidget {
                 fit: BoxFit.cover,
                 errorBuilder: (context, error, stack) => const SizedBox.shrink(),
               ),
-              Positioned(
-                top: 6,
-                right: 6,
-                child: Material(
-                  color: Colors.black.withValues(alpha: 0.55),
-                  borderRadius: BorderRadius.circular(8),
-                  child: const Padding(
-                    padding: EdgeInsets.all(6),
-                    child: Icon(Icons.open_in_full, size: 16, color: Colors.white),
-                  ),
-                ),
-              ),
+              ExpandButton(onTap: () => ZoomableImageView.open(context, url)),
             ],
           ),
         );
       },
-    );
-  }
-}
-
-/// Fullscreen pinch-to-zoom view for a chat image. Pinch/drag to zoom and
-/// pan, double-tap to reset — standard InteractiveViewer gesture set, same
-/// pattern used by most chat apps for image previews.
-class _ImageFullscreenView extends StatefulWidget {
-  const _ImageFullscreenView({required this.imageUrl});
-  final String imageUrl;
-
-  @override
-  State<_ImageFullscreenView> createState() => _ImageFullscreenViewState();
-}
-
-class _ImageFullscreenViewState extends State<_ImageFullscreenView> {
-  final TransformationController _transformController = TransformationController();
-  TapDownDetails? _doubleTapDetails;
-
-  void _handleDoubleTap() {
-    if (_transformController.value != Matrix4.identity()) {
-      _transformController.value = Matrix4.identity();
-      return;
-    }
-    final position = _doubleTapDetails?.localPosition ?? Offset.zero;
-    _transformController.value = Matrix4.identity()
-      ..translate(-position.dx * 2, -position.dy * 2)
-      ..scale(3.0);
-  }
-
-  @override
-  void dispose() {
-    _transformController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.close, color: Colors.white),
-                onPressed: () => Navigator.of(context).pop(),
-              ),
-            ],
-          ),
-          Expanded(
-            child: GestureDetector(
-              onDoubleTapDown: (details) => _doubleTapDetails = details,
-              onDoubleTap: _handleDoubleTap,
-              child: InteractiveViewer(
-                transformationController: _transformController,
-                minScale: 1,
-                maxScale: 5,
-                child: Center(
-                  child: Image.network(
-                    widget.imageUrl,
-                    errorBuilder: (context, error, stack) => const Icon(
-                      Icons.broken_image,
-                      color: Colors.white54,
-                      size: 48,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -424,7 +328,7 @@ class _MessageBubble extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (parsed.diagram != null && parsed.diagram!.isNotEmpty) ...[
-                    MermaidView(diagram: parsed.diagram!, height: 260),
+                    MermaidView(diagram: parsed.diagram!, height: 300),
                     const SizedBox(height: AppSpacing.xs),
                   ],
                   if (message.imagePath != null) ...[

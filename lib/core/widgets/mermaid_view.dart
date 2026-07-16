@@ -16,7 +16,7 @@ class MermaidView extends StatefulWidget {
   const MermaidView({
     super.key,
     required this.diagram,
-    this.height = 280,
+    this.height = 320,
     this.expandable = true,
   });
 
@@ -152,7 +152,14 @@ class _MermaidFullscreenViewState extends State<_MermaidFullscreenView> {
                 borderRadius: BorderRadius.circular(AppRadius.card),
                 child: Stack(
                   children: [
-                    Container(color: Colors.white, child: WebViewWidget(controller: _controller)),
+                    Container(
+                      color: Colors.white,
+                      child: InteractiveViewer(
+                        minScale: 1,
+                        maxScale: 5,
+                        child: WebViewWidget(controller: _controller),
+                      ),
+                    ),
                     if (!_loaded)
                       Container(
                         color: AppColors.surfaceContainerLow,
@@ -226,11 +233,29 @@ $escaped
       startOnLoad: true,
       theme: 'neutral',
       securityLevel: 'loose',
-      // Bumped from 20px -> 28px: node labels were hard to read at the
-      // small size the chat bubble renders the diagram at.
       themeVariables: { fontSize: '28px' },
-      flowchart: { useMaxWidth: true, htmlLabels: true }
+      flowchart: { useMaxWidth: true, htmlLabels: true, nodeSpacing: 40, rankSpacing: 50 }
     });
+
+    // Belt-and-suspenders fix: Mermaid sets its own inline width/height/
+    // max-width on the <svg> it generates via JS, AFTER this page's CSS
+    // has already applied — so a CSS override alone (even with !important)
+    // doesn't reliably win in every WebView engine. Watching for the SVG
+    // to appear and stripping its inline sizing directly is what actually
+    // guarantees the "diagram renders tiny" problem stays fixed everywhere.
+    const target = document.querySelector('.mermaid');
+    const observer = new MutationObserver(() => {
+      const svg = target.querySelector('svg');
+      if (svg) {
+        svg.removeAttribute('width');
+        svg.removeAttribute('height');
+        svg.style.maxWidth = 'none';
+        svg.style.width = '100%';
+        svg.style.height = 'auto';
+        observer.disconnect();
+      }
+    });
+    observer.observe(target, { childList: true, subtree: true });
   </script>
 </body>
 </html>
