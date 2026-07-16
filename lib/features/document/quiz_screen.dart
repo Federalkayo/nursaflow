@@ -10,6 +10,7 @@ import '../../core/theme/app_text_styles.dart';
 import '../../core/widgets/app_buttons.dart';
 import '../../core/widgets/app_card.dart';
 import '../../core/widgets/responsive_page.dart';
+import '../../core/widgets/skeleton.dart';
 import '../home/models/quiz_question.dart';
 
 class QuizScreen extends ConsumerStatefulWidget {
@@ -207,7 +208,10 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
                 ),
               );
             },
-            loading: () => const Center(child: CircularProgressIndicator()),
+            loading: () => const Padding(
+              padding: EdgeInsets.only(top: AppSpacing.md),
+              child: SkeletonCard(height: 360),
+            ),
             error: (err, stack) => Center(child: Text('Error: $err')),
           ),
         ),

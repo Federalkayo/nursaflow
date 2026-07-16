@@ -8,6 +8,7 @@ import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/widgets/app_card.dart';
 import '../../core/widgets/responsive_page.dart';
+import '../../core/widgets/skeleton.dart';
 import '../../core/utils/responsive.dart';
 import '../planner/models/study_task.dart';
 import 'widgets/document_status_card.dart';
@@ -130,10 +131,19 @@ class HomeScreen extends ConsumerWidget {
 
                     documentsAsync.when(
                       data: (docs) => _QuickStatsRow(docs: docs),
-                      loading: () => const Center(child: Padding(
-                        padding: EdgeInsets.symmetric(vertical: AppSpacing.sm),
-                        child: CircularProgressIndicator(),
-                      )),
+                      loading: () => AppShimmer(
+                        child: Row(
+                          children: List.generate(
+                            3,
+                            (i) => Expanded(
+                              child: Padding(
+                                padding: EdgeInsets.only(right: i < 2 ? AppSpacing.sm : 0),
+                                child: const SkeletonBox(height: 72, borderRadius: 16),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                       error: (err, stack) => const SizedBox(),
                     ),
 
@@ -293,11 +303,12 @@ class HomeScreen extends ConsumerWidget {
                           ),
                         );
                 },
-                loading: () => const Center(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(vertical: AppSpacing.lg),
-                    child: CircularProgressIndicator(),
+                loading: () => Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.containerMargin,
+                    vertical: AppSpacing.sm,
                   ),
+                  child: const SkeletonRow(itemCount: 3, itemWidth: 220, height: 200),
                 ),
                 error: (err, stack) => Center(
                   child: Padding(

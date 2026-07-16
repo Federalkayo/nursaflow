@@ -42,6 +42,12 @@ dependencies:
   # Local diagram rendering (Mermaid.js via a lightweight embedded WebView)
   webview_flutter: ^4.9.0
 
+  # In-app YouTube playback for Resources tab lecture videos
+  youtube_player_iframe: ^5.2.1
+
+  # Shimmer skeleton screens for list/content loading states
+  shimmer: ^3.0.0
+
   # Text-to-speech for reading AI Tutor replies aloud
   flutter_tts: ^4.2.0
 

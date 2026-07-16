@@ -11,6 +11,7 @@ import '../../core/widgets/app_buttons.dart';
 import '../../core/widgets/app_card.dart';
 import '../../core/widgets/mermaid_view.dart';
 import '../../core/widgets/responsive_page.dart';
+import '../../core/widgets/skeleton.dart';
 import '../../core/widgets/zoomable_image_view.dart';
 import '../home/models/document.dart';
 import '../home/models/study_stats.dart';
@@ -343,8 +344,30 @@ class _DocumentSummaryScreenState extends ConsumerState<DocumentSummaryScreen> {
           ),
         );
       },
-      loading: () => const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+      loading: () => Scaffold(
+        body: SafeArea(
+          child: ResponsivePage(
+            child: AppShimmer(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: AppSpacing.md),
+                  const SkeletonLine(width: 200, height: 24),
+                  const SizedBox(height: AppSpacing.sm),
+                  const SkeletonLine(width: 120),
+                  const SizedBox(height: AppSpacing.lg),
+                  SkeletonBox(width: double.infinity, height: 100, borderRadius: 16),
+                  const SizedBox(height: AppSpacing.md),
+                  const SkeletonLine(width: double.infinity),
+                  const SizedBox(height: AppSpacing.xs),
+                  const SkeletonLine(width: double.infinity),
+                  const SizedBox(height: AppSpacing.xs),
+                  const SkeletonLine(width: 220),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
       error: (err, stack) => Scaffold(
         appBar: AppBar(title: const Text('Error')),

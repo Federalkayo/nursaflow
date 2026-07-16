@@ -7,6 +7,7 @@ import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/widgets/app_buttons.dart';
 import '../../core/widgets/responsive_page.dart';
+import '../../core/widgets/skeleton.dart';
 import '../../core/utils/responsive.dart';
 import 'models/document.dart';
 import 'widgets/document_status_card.dart';
@@ -41,7 +42,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       body: SafeArea(
         child: ResponsivePage(
           child: documentsAsync.when(
-            loading: () => const Center(child: CircularProgressIndicator()),
+            loading: () => const Padding(
+              padding: EdgeInsets.only(top: AppSpacing.md),
+              child: SkeletonGrid(itemCount: 6, childAspectRatio: 0.78),
+            ),
             error: (err, stack) => Center(child: Text('Error loading documents: $err')),
             data: (documents) {
               final courses = ['All', ...{for (final d in documents) d.course}];

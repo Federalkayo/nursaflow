@@ -9,6 +9,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/widgets/responsive_page.dart';
+import '../../core/widgets/skeleton.dart';
 import '../home/models/flashcard.dart';
 
 class FlashcardsScreen extends ConsumerStatefulWidget {
@@ -255,7 +256,10 @@ class _FlashcardsScreenState extends ConsumerState<FlashcardsScreen>
                 ),
               );
             },
-            loading: () => const Center(child: CircularProgressIndicator()),
+            loading: () => const Padding(
+              padding: EdgeInsets.only(top: AppSpacing.md),
+              child: SkeletonCard(height: 320),
+            ),
             error: (err, stack) => Center(child: Text('Error: $err')),
           ),
         ),

@@ -8,7 +8,9 @@ import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/widgets/app_card.dart';
 import '../../core/widgets/responsive_page.dart';
+import '../../core/widgets/skeleton.dart';
 import 'models/resource.dart';
+import 'youtube_player_screen.dart';
 
 class ResourcesScreen extends ConsumerWidget {
   const ResourcesScreen({super.key, required this.documentId});
@@ -21,6 +23,12 @@ class ResourcesScreen extends ConsumerWidget {
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
+  }
+
+  void _playInApp(BuildContext context, YoutubeResource video) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => YoutubePlayerScreen(video: video)),
+    );
   }
 
   @override
@@ -56,7 +64,7 @@ class ResourcesScreen extends ConsumerWidget {
                         ),
                         const SizedBox(height: AppSpacing.sm),
                         for (final v in resources.youtube)
-                          _YoutubeCard(video: v, onTap: () => _open(v.watchUrl)),
+                          _YoutubeCard(video: v, onTap: () => _playInApp(context, v)),
                         const SizedBox(height: AppSpacing.lg),
                       ],
                       if (resources.books.isNotEmpty) ...[
@@ -96,7 +104,10 @@ class ResourcesScreen extends ConsumerWidget {
               ],
             );
           },
-          loading: () => const Center(child: CircularProgressIndicator()),
+          loading: () => const Padding(
+            padding: EdgeInsets.all(AppSpacing.md),
+            child: SkeletonList(itemCount: 5, thumbnailSize: 64),
+          ),
           error: (err, stack) => _EmptyState(
             message: "Couldn't load resources. Check your connection and try again.",
             onRetry: () => ref.invalidate(documentResourcesProvider(documentId)),

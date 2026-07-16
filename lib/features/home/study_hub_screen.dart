@@ -7,6 +7,7 @@ import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/widgets/app_card.dart';
 import '../../core/widgets/responsive_page.dart';
+import '../../core/widgets/skeleton.dart';
 import '../../core/utils/responsive.dart';
 import 'models/document.dart';
 
@@ -114,12 +115,7 @@ class StudyHubScreen extends ConsumerWidget {
                     ],
                   );
                 },
-                loading: () => const Center(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(vertical: AppSpacing.xl),
-                    child: CircularProgressIndicator(),
-                  ),
-                ),
+                loading: () => const SkeletonList(itemCount: 4, showThumbnail: false),
                 error: (err, stack) => Center(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: AppSpacing.xl),

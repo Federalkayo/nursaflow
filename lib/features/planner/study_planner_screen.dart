@@ -9,6 +9,7 @@ import '../../core/theme/app_text_styles.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_card.dart';
 import '../../core/widgets/responsive_page.dart';
+import '../../core/widgets/skeleton.dart';
 import '../../core/utils/responsive.dart';
 import '../home/models/study_stats.dart';
 import 'models/study_task.dart';
@@ -122,7 +123,10 @@ class _StudyPlannerScreenState extends ConsumerState<StudyPlannerScreen> {
       body: SafeArea(
         child: ResponsivePage(
           child: tasksAsync.when(
-            loading: () => const Center(child: CircularProgressIndicator()),
+            loading: () => const Padding(
+              padding: EdgeInsets.only(top: AppSpacing.md),
+              child: SkeletonList(itemCount: 5, showThumbnail: false),
+            ),
             error: (err, stack) => Center(child: Text('Error loading planner: $err')),
             data: (allTasks) {
               final regularTasks = allTasks.where((t) => !t.isExam).toList();

@@ -12,6 +12,7 @@ import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/widgets/mermaid_view.dart';
 import '../../core/widgets/responsive_page.dart';
+import '../../core/widgets/skeleton.dart';
 import '../../core/widgets/zoomable_image_view.dart';
 import 'models/chat_message.dart';
 
@@ -214,7 +215,7 @@ class _AiTutorScreenState extends ConsumerState<AiTutorScreen> {
                     },
                   );
                 },
-                loading: () => const Center(child: CircularProgressIndicator()),
+                loading: () => const SkeletonChat(),
                 error: (err, stack) => Center(child: Text('Error loading chat history: $err')),
               ),
             ),
