@@ -12,7 +12,20 @@
           "package_name": "com.example.nursaflow"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "470077566635-gpdrcfc4iaq08vb1q0ahkitho41om5c5.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.nursaflow",
+            "certificate_hash": "caf6cf97448e0fb189a1978d795aa1ff81389a25"
+          }
+        },
+        {
+          "client_id": "470077566635-beu5ddbrhajljmol5vfed1kgs4p5fi1k.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyB4u1UjNexKWG145BmwVFLC3PBXoOmDeMw"
@@ -20,7 +33,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "470077566635-beu5ddbrhajljmol5vfed1kgs4p5fi1k.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "470077566635-u89s30mhua87tkovjr4vi422orobdtnt.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.nursaflow"
+              }
+            }
+          ]
         }
       }
     }

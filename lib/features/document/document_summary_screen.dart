@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import '../../core/theme/app_colors.dart';
@@ -7,6 +8,7 @@ import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/widgets/app_buttons.dart';
 import '../../core/widgets/app_card.dart';
+import '../../core/widgets/mermaid_view.dart';
 import '../../core/widgets/responsive_page.dart';
 import '../home/models/document.dart';
 
@@ -65,9 +67,9 @@ class DocumentSummaryScreen extends ConsumerWidget {
         }
 
         // Setup dynamic summaries with local defaults if empty
-        final clinicalOverview = doc.clinicalOverview ?? 
+        final clinicalOverview = doc.clinicalOverview ??
             'Pediatric nursing focuses on the care of infants, children, and adolescents. Unlike adult care, it requires a deep understanding of developmental stages and family-centered care models.';
-        
+
         final keyPrinciples = doc.keyPrinciples ?? [
           {
             'title': 'Family-Centered Care',
@@ -151,6 +153,13 @@ class DocumentSummaryScreen extends ConsumerWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        if (doc.mermaid != null && doc.mermaid!.trim().isNotEmpty) ...[
+                          MermaidView(diagram: doc.mermaid!),
+                          const SizedBox(height: AppSpacing.md),
+                        ] else if (doc.illustrationPath != null) ...[
+                          _DocumentIllustration(path: doc.illustrationPath!),
+                          const SizedBox(height: AppSpacing.md),
+                        ],
                         AppCard(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -165,22 +174,30 @@ class DocumentSummaryScreen extends ConsumerWidget {
                                   ],
                                 ),
                               ),
-                              const SizedBox(height: AppSpacing.sm),
-                              Container(
-                                padding: const EdgeInsets.all(AppSpacing.sm),
-                                decoration: BoxDecoration(
-                                  color: AppColors.surfaceContainerLow,
-                                  border: const Border(
-                                    left: BorderSide(color: AppColors.primary, width: 3),
+                              // Quote card is now AI-generated per document
+                              // (doc.keyQuote) instead of a hardcoded
+                              // pediatric quote that showed on every
+                              // document regardless of topic. Hidden
+                              // entirely when the document has no quote —
+                              // never falls back to a wrong/generic one.
+                              if (doc.keyQuote != null && doc.keyQuote!.trim().isNotEmpty) ...[
+                                const SizedBox(height: AppSpacing.sm),
+                                Container(
+                                  padding: const EdgeInsets.all(AppSpacing.sm),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.surfaceContainerLow,
+                                    border: const Border(
+                                      left: BorderSide(color: AppColors.primary, width: 3),
+                                    ),
+                                    borderRadius: BorderRadius.circular(8),
                                   ),
-                                  borderRadius: BorderRadius.circular(8),
+                                  child: Text(
+                                    '"${doc.keyQuote}"',
+                                    style: AppTextStyles.bodyMd(color: AppColors.onSurfaceVariant)
+                                        .copyWith(fontStyle: FontStyle.italic),
+                                  ),
                                 ),
-                                child: Text(
-                                  '"The child is not just a small adult. Physiological processes differ significantly in rate and capacity."',
-                                  style: AppTextStyles.bodyMd(color: AppColors.onSurfaceVariant)
-                                      .copyWith(fontStyle: FontStyle.italic),
-                                ),
-                              ),
+                              ],
                               const SizedBox(height: AppSpacing.md),
                               Text('Key Principles', style: AppTextStyles.labelLg()),
                               const SizedBox(height: AppSpacing.xs),
@@ -200,8 +217,17 @@ class DocumentSummaryScreen extends ConsumerWidget {
                             children: [
                               const _SectionTitle(icon: Symbols.stethoscope, title: 'Assessment Hierarchy'),
                               const SizedBox(height: AppSpacing.sm),
+                              // Same fix as the quote card above: this used
+                              // to be a hardcoded pediatric-specific line
+                              // shown for every document. Now pulled from
+                              // doc.assessmentNote, with a neutral
+                              // (non-pediatric) fallback when Groq judged
+                              // this topic has no real assessment note to
+                              // give (e.g. purely anatomical topics).
                               Text(
-                                'To reduce anxiety, always perform the least invasive assessments first. Save painful or intrusive exams (ears, throat) for the end.',
+                                (doc.assessmentNote != null && doc.assessmentNote!.trim().isNotEmpty)
+                                    ? doc.assessmentNote!
+                                    : 'Follow standard assessment order for this topic, moving from least to most invasive where applicable.',
                                 style: AppTextStyles.bodyMd(color: AppColors.onSurface),
                               ),
                               const SizedBox(height: AppSpacing.sm),
@@ -379,6 +405,56 @@ class _SegmentedTabs extends StatelessWidget {
               () => context.push('/tutor?documentId=$documentId')),
         ],
       ),
+    );
+  }
+}
+
+/// Resolves a Firebase Storage path (not a raw URL) to an actual download
+/// URL client-side, so access still goes through Storage security rules
+/// (only the signed-in owner can read their own path). Shows a skeleton
+/// while loading and disappears gracefully if the image ever fails to load
+/// rather than breaking the rest of the summary screen.
+class _DocumentIllustration extends StatelessWidget {
+  const _DocumentIllustration({required this.path});
+  final String path;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<String>(
+      future: FirebaseStorage.instance.ref(path).getDownloadURL(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(AppRadius.card),
+            child: Container(
+              height: 200,
+              color: AppColors.surfaceContainerLow,
+              child: const Center(
+                child: SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: CircularProgressIndicator(strokeWidth: 2.5),
+                ),
+              ),
+            ),
+          );
+        }
+        if (!snapshot.hasData) {
+          // Illustration failed to resolve — just skip it silently, the
+          // rest of the summary is still fully usable without it.
+          return const SizedBox.shrink();
+        }
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(AppRadius.card),
+          child: Image.network(
+            snapshot.data!,
+            width: double.infinity,
+            height: 200,
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stack) => const SizedBox.shrink(),
+          ),
+        );
+      },
     );
   }
 }

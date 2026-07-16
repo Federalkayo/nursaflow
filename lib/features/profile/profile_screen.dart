@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import '../../core/theme/app_colors.dart';
@@ -10,6 +11,36 @@ import '../../core/widgets/responsive_page.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
+
+  // Fully signs the user out — clears both the Firebase session and the
+  // cached Google account, so the account picker shows again next time
+  // instead of silently re-using whichever Google account was last used.
+  Future<void> _logout(BuildContext context) async {
+    final googleSignIn = GoogleSignIn();
+
+    // Call both unconditionally — isSignedIn() can under-report the native
+    // session state on some devices, causing disconnect() to be skipped.
+    // signOut() clears the local cached account; disconnect() revokes the
+    // granted access entirely, which is what actually forces the full
+    // account chooser to reappear on the next sign-in attempt.
+    try {
+      await googleSignIn.signOut();
+    } catch (e) {
+      debugPrint('GoogleSignIn signOut() error: $e');
+    }
+
+    try {
+      await googleSignIn.disconnect();
+    } catch (e) {
+      debugPrint('GoogleSignIn disconnect() error: $e');
+    }
+
+    await FirebaseAuth.instance.signOut();
+
+    if (context.mounted) {
+      context.go('/auth');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -140,12 +171,7 @@ class ProfileScreen extends StatelessWidget {
                       title: 'Logout',
                       subtitle: 'Sign out of your account',
                       titleColor: AppColors.error,
-                      onTap: () async {
-                        await FirebaseAuth.instance.signOut();
-                        if (context.mounted) {
-                          context.go('/auth');
-                        }
-                      },
+                      onTap: () => _logout(context),
                     ),
                   ],
                 ),

@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../core/widgets/mermaid_view.dart';
 import '../../core/widgets/responsive_page.dart';
 import 'models/chat_message.dart';
 
@@ -56,22 +59,33 @@ class _AiTutorScreenState extends ConsumerState<AiTutorScreen> {
       });
       _scrollToBottom();
 
-      // 2. Generate simulated response after a small delay
-      Future.delayed(const Duration(milliseconds: 1000), () async {
-        final responseText = _mockResponseFor(text);
+      // 2. Call the askTutor Cloud Function. It reads document context +
+      // recent chat history, calls Gemini, and writes the AI's reply
+      // directly to Firestore — our stream listener (tutorMessagesProvider)
+      // picks up the new message automatically, so we don't need to write
+      // anything here on success.
+      try {
+        await FirebaseFunctions.instance.httpsCallable('askTutor').call({
+          'documentId': widget.documentId,
+          'message': text,
+        });
+      } catch (e) {
+        // If the function call itself fails (network issue, cold start
+        // timeout, etc.), surface a friendly message directly rather than
+        // leaving the student staring at a stuck typing indicator forever.
         await chatCollection.add({
           'sender': TutorSender.ai.name,
-          'text': responseText,
+          'text': "Sorry, I'm having trouble connecting right now. Please try again.",
           'timestamp': FieldValue.serverTimestamp(),
         });
-
+      } finally {
         if (mounted) {
           setState(() {
             _isThinking = false;
           });
           _scrollToBottom();
         }
-      });
+      }
     } catch (_) {
       if (mounted) {
         setState(() {
@@ -79,18 +93,6 @@ class _AiTutorScreenState extends ConsumerState<AiTutorScreen> {
         });
       }
     }
-  }
-
-  String _mockResponseFor(String prompt) {
-    final p = prompt.toLowerCase();
-    if (p.contains('mnemonic')) {
-      return 'Sure — for cranial nerves, try: "Oh Oh Oh To Touch And Feel Very Green Vegetables AH!" (Olfactory, Optic, Oculomotor, Trochlear, Trigeminal, Abducens, Facial, Vestibulocochlear, Glossopharyngeal, Vagus, Accessory, Hypoglossal).';
-    } else if (p.contains('summary')) {
-      return 'Here is a high-level summary of Renal Function: \n- Glomerular Filtration: Filters waste and excess water from blood.\n- Tubular Reabsorption: Returns essential substances (water, glucose, electrolytes) to blood.\n- Tubular Secretion: Secretes ions and waste products into filtrate.';
-    } else if (p.contains('quiz')) {
-      return 'Quick Quiz: Which hormone regulates water reabsorption in the collecting ducts? (A) Aldosterone, (B) ADH, (C) Renin. Reply with your choice!';
-    }
-    return "Glomerular filtration rate (GFR) is essentially how fast your kidneys filter blood. Think of it as a speedometer for kidney function — a normal GFR sits around 90-120 mL/min. When it drops below 60 for 3+ months, that's a signal of chronic kidney disease.";
   }
 
   void _scrollToBottom() {
@@ -227,13 +229,174 @@ class _AiTutorScreenState extends ConsumerState<AiTutorScreen> {
   }
 }
 
+/// Resolves a Storage path to a download URL client-side (respecting
+/// Storage security rules) and displays it, with a loading skeleton and
+/// silent fail-through if the image can't be loaded.
+///
+/// Tappable — opens a fullscreen pinch-to-zoom view (InteractiveViewer),
+/// mirroring the expand affordance already used on Mermaid diagrams, but
+/// with pinch/pan gestures instead of a static larger view since that's
+/// the natural interaction for a photo/illustration.
+class _ChatImage extends StatelessWidget {
+  const _ChatImage({required this.path});
+  final String path;
+
+  void _openFullscreen(BuildContext context, String url) {
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        opaque: false,
+        barrierColor: Colors.black87,
+        pageBuilder: (context, _, __) => _ImageFullscreenView(imageUrl: url),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<String>(
+      future: FirebaseStorage.instance.ref(path).getDownloadURL(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            width: 220,
+            height: 220,
+            color: AppColors.surfaceContainerLow,
+            child: const Center(
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2.5),
+              ),
+            ),
+          );
+        }
+        if (!snapshot.hasData) return const SizedBox.shrink();
+
+        final url = snapshot.data!;
+        return GestureDetector(
+          onTap: () => _openFullscreen(context, url),
+          child: Stack(
+            children: [
+              Image.network(
+                url,
+                width: 220,
+                height: 220,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stack) => const SizedBox.shrink(),
+              ),
+              Positioned(
+                top: 6,
+                right: 6,
+                child: Material(
+                  color: Colors.black.withValues(alpha: 0.55),
+                  borderRadius: BorderRadius.circular(8),
+                  child: const Padding(
+                    padding: EdgeInsets.all(6),
+                    child: Icon(Icons.open_in_full, size: 16, color: Colors.white),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Fullscreen pinch-to-zoom view for a chat image. Pinch/drag to zoom and
+/// pan, double-tap to reset — standard InteractiveViewer gesture set, same
+/// pattern used by most chat apps for image previews.
+class _ImageFullscreenView extends StatefulWidget {
+  const _ImageFullscreenView({required this.imageUrl});
+  final String imageUrl;
+
+  @override
+  State<_ImageFullscreenView> createState() => _ImageFullscreenViewState();
+}
+
+class _ImageFullscreenViewState extends State<_ImageFullscreenView> {
+  final TransformationController _transformController = TransformationController();
+  TapDownDetails? _doubleTapDetails;
+
+  void _handleDoubleTap() {
+    if (_transformController.value != Matrix4.identity()) {
+      _transformController.value = Matrix4.identity();
+      return;
+    }
+    final position = _doubleTapDetails?.localPosition ?? Offset.zero;
+    _transformController.value = Matrix4.identity()
+      ..translate(-position.dx * 2, -position.dy * 2)
+      ..scale(3.0);
+  }
+
+  @override
+  void dispose() {
+    _transformController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.close, color: Colors.white),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ],
+          ),
+          Expanded(
+            child: GestureDetector(
+              onDoubleTapDown: (details) => _doubleTapDetails = details,
+              onDoubleTap: _handleDoubleTap,
+              child: InteractiveViewer(
+                transformationController: _transformController,
+                minScale: 1,
+                maxScale: 5,
+                child: Center(
+                  child: Image.network(
+                    widget.imageUrl,
+                    errorBuilder: (context, error, stack) => const Icon(
+                      Icons.broken_image,
+                      color: Colors.white54,
+                      size: 48,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _MessageBubble extends StatelessWidget {
   const _MessageBubble({required this.message});
   final TutorChatMessage message;
 
+  // Extracts a ```mermaid ... ``` fenced block from the message text, if
+  // present, returning (diagramSyntax, remainingText). The AI Tutor is
+  // instructed to only include this fence for process/mechanism questions
+  // (see buildTutorPrompt in the Cloud Function).
+  ({String? diagram, String text}) _parseMermaid(String raw) {
+    final match = RegExp(r'```mermaid\s*([\s\S]*?)```').firstMatch(raw);
+    if (match == null) return (diagram: null, text: raw);
+    final diagram = match.group(1)?.trim();
+    final remaining = raw.replaceRange(match.start, match.end, '').trim();
+    return (diagram: diagram, text: remaining);
+  }
+
   @override
   Widget build(BuildContext context) {
     final isAi = message.sender == TutorSender.ai;
+    final parsed = isAi ? _parseMermaid(message.text) : (diagram: null, text: message.text);
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.sm),
       child: Row(
@@ -256,7 +419,25 @@ class _MessageBubble extends StatelessWidget {
                   bottomRight: Radius.circular(isAi ? 16 : 4),
                 ),
               ),
-              child: Text(message.text, style: AppTextStyles.bodyMd(color: AppColors.onSurface)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (parsed.diagram != null && parsed.diagram!.isNotEmpty) ...[
+                    MermaidView(diagram: parsed.diagram!, height: 260),
+                    const SizedBox(height: AppSpacing.xs),
+                  ],
+                  if (message.imagePath != null) ...[
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: _ChatImage(path: message.imagePath!),
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                  ],
+                  if (parsed.text.isNotEmpty)
+                    Text(parsed.text, style: AppTextStyles.bodyMd(color: AppColors.onSurface)),
+                ],
+              ),
             ),
           ),
           if (!isAi) const SizedBox(width: 8),
