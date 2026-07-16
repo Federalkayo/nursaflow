@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import '../../core/theme/app_colors.dart';
@@ -33,6 +34,50 @@ class _AiTutorScreenState extends ConsumerState<AiTutorScreen> {
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
   bool _isThinking = false;
+
+  // Text-to-speech: one shared FlutterTts instance for the whole screen.
+  // Tracks which message (by id) is currently being read aloud so the
+  // speaker icon on that bubble can flip to a "stop" state, and so tapping
+  // a different message's speaker button stops the previous one first
+  // rather than overlapping audio.
+  final FlutterTts _tts = FlutterTts();
+  String? _speakingMessageId;
+
+  @override
+  void initState() {
+    super.initState();
+    _initTts();
+  }
+
+  Future<void> _initTts() async {
+    await _tts.setLanguage("en-US");
+    await _tts.setSpeechRate(0.45);
+    await _tts.setPitch(1.0);
+    await _tts.setVolume(1.0);
+    _tts.setCompletionHandler(() {
+      if (mounted) setState(() => _speakingMessageId = null);
+    });
+    _tts.setCancelHandler(() {
+      if (mounted) setState(() => _speakingMessageId = null);
+    });
+    _tts.setErrorHandler((msg) {
+      if (mounted) setState(() => _speakingMessageId = null);
+    });
+  }
+
+  Future<void> _toggleSpeak(TutorChatMessage message, String textToSpeak) async {
+    if (_speakingMessageId == message.id) {
+      await _tts.stop();
+      setState(() => _speakingMessageId = null);
+      return;
+    }
+    // Stop whatever's currently playing before starting the new one —
+    // flutter_tts queues by default rather than interrupting, which would
+    // otherwise let two replies overlap if tapped in quick succession.
+    await _tts.stop();
+    setState(() => _speakingMessageId = message.id);
+    await _tts.speak(textToSpeak);
+  }
 
   Future<void> _send([String? preset]) async {
     final text = preset ?? _controller.text.trim();
@@ -111,6 +156,7 @@ class _AiTutorScreenState extends ConsumerState<AiTutorScreen> {
   void dispose() {
     _controller.dispose();
     _scrollController.dispose();
+    _tts.stop();
     super.dispose();
   }
 
@@ -159,7 +205,12 @@ class _AiTutorScreenState extends ConsumerState<AiTutorScreen> {
                     itemCount: messages.length + (_isThinking ? 1 : 0),
                     itemBuilder: (context, i) {
                       if (i == messages.length) return const _TypingBubble();
-                      return _MessageBubble(message: messages[i]);
+                      final msg = messages[i];
+                      return _MessageBubble(
+                        message: msg,
+                        isSpeaking: _speakingMessageId == msg.id,
+                        onToggleSpeak: (textToSpeak) => _toggleSpeak(msg, textToSpeak),
+                      );
                     },
                   );
                 },
@@ -282,8 +333,14 @@ class _ChatImage extends StatelessWidget {
 }
 
 class _MessageBubble extends StatelessWidget {
-  const _MessageBubble({required this.message});
+  const _MessageBubble({
+    required this.message,
+    this.isSpeaking = false,
+    this.onToggleSpeak,
+  });
   final TutorChatMessage message;
+  final bool isSpeaking;
+  final ValueChanged<String>? onToggleSpeak;
 
   // Extracts a ```mermaid ... ``` fenced block from the message text, if
   // present, returning (diagramSyntax, remainingText). The AI Tutor is
@@ -340,6 +397,34 @@ class _MessageBubble extends StatelessWidget {
                   ],
                   if (parsed.text.isNotEmpty)
                     Text(parsed.text, style: AppTextStyles.bodyMd(color: AppColors.onSurface)),
+                  // Read-aloud button — AI messages only, and only when
+                  // there's actual text to speak (a pure diagram/image
+                  // message has nothing worth narrating).
+                  if (isAi && parsed.text.isNotEmpty && onToggleSpeak != null) ...[
+                    const SizedBox(height: 4),
+                    InkWell(
+                      onTap: () => onToggleSpeak!(parsed.text),
+                      borderRadius: BorderRadius.circular(6),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              isSpeaking ? Symbols.stop_circle : Symbols.volume_up,
+                              size: 16,
+                              color: AppColors.tertiary,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              isSpeaking ? 'Stop' : 'Listen',
+                              style: AppTextStyles.bodySm(color: AppColors.tertiary),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),

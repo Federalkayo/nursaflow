@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -12,16 +13,35 @@ import '../../core/widgets/mermaid_view.dart';
 import '../../core/widgets/responsive_page.dart';
 import '../../core/widgets/zoomable_image_view.dart';
 import '../home/models/document.dart';
+import '../home/models/study_stats.dart';
 
-class DocumentSummaryScreen extends ConsumerWidget {
+class DocumentSummaryScreen extends ConsumerStatefulWidget {
   const DocumentSummaryScreen({super.key, required this.documentId});
   final String documentId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<DocumentSummaryScreen> createState() => _DocumentSummaryScreenState();
+}
+
+class _DocumentSummaryScreenState extends ConsumerState<DocumentSummaryScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Record this as the student's most recently opened document, powering
+    // the "Continue Reading" card on the Home screen. Fired once here
+    // rather than inside build(), which reruns on every Firestore stream
+    // update.
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) {
+      setLastReadDocument(uid, widget.documentId);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     // If the document ID starts with 'new-upload' or 'mock-', we can check the singleDocumentProvider.
     // If not found, singleDocumentProvider will throw, which we catch. We also handle the loading/processing states.
-    final documentAsync = ref.watch(singleDocumentProvider(documentId));
+    final documentAsync = ref.watch(singleDocumentProvider(widget.documentId));
 
     return documentAsync.when(
       data: (doc) {
@@ -145,7 +165,7 @@ class DocumentSummaryScreen extends ConsumerWidget {
                 ),
                 ResponsivePage(
                   padBottom: false,
-                  child: _SegmentedTabs(documentId: documentId, active: _Tab.summary),
+                  child: _SegmentedTabs(documentId: widget.documentId, active: _Tab.summary),
                 ),
                 const SizedBox(height: AppSpacing.md),
                 ResponsivePage(
@@ -316,7 +336,7 @@ class DocumentSummaryScreen extends ConsumerWidget {
             ),
           ),
           floatingActionButton: FloatingActionButton.extended(
-            onPressed: () => context.push('/tutor?documentId=$documentId'),
+            onPressed: () => context.push('/tutor?documentId=${widget.documentId}'),
             backgroundColor: AppColors.tertiary,
             icon: const Icon(Symbols.psychology, color: Colors.white),
             label: const Text('Ask AI Tutor', style: TextStyle(color: Colors.white)),
