@@ -12,6 +12,7 @@ import '../../features/upload/upload_screen.dart';
 import '../../features/document/document_summary_screen.dart';
 import '../../features/document/flashcards_screen.dart';
 import '../../features/document/quiz_screen.dart';
+import '../../features/document/resources_screen.dart';
 import '../../features/tutor/ai_tutor_screen.dart';
 import '../../features/planner/study_planner_screen.dart';
 import '../../features/profile/profile_screen.dart';
@@ -60,6 +61,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/document/:id/quiz',
         parentNavigatorKey: _rootNavigatorKey,
         builder: (context, state) => QuizScreen(
+          documentId: state.pathParameters['id']!,
+        ),
+      ),
+      GoRoute(
+        path: '/document/:id/resources',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => ResourcesScreen(
           documentId: state.pathParameters['id']!,
         ),
       ),

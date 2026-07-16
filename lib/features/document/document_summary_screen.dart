@@ -372,7 +372,7 @@ class _DocumentSummaryScreenState extends ConsumerState<DocumentSummaryScreen> {
   }
 }
 
-enum _Tab { summary, flashcards, quiz, tutor }
+enum _Tab { summary, flashcards, quiz, resources, tutor }
 
 class _SegmentedTabs extends StatelessWidget {
   const _SegmentedTabs({required this.documentId, required this.active});
@@ -417,6 +417,8 @@ class _SegmentedTabs extends StatelessWidget {
           tab('Flashcards', _Tab.flashcards,
               () => context.push('/document/$documentId/flashcards')),
           tab('Quiz', _Tab.quiz, () => context.push('/document/$documentId/quiz')),
+          tab('Resources', _Tab.resources,
+              () => context.push('/document/$documentId/resources')),
           tab('Ask Tutor', _Tab.tutor,
               () => context.push('/tutor?documentId=$documentId')),
         ],
