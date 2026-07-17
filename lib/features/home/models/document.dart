@@ -131,6 +131,16 @@ final authStateChangesProvider = StreamProvider<User?>((ref) {
   return FirebaseAuth.instance.authStateChanges();
 });
 
+// Like authStateChangesProvider, but also re-emits on profile field changes
+// (updateDisplayName/updatePhotoURL) — authStateChanges() only fires on
+// sign-in/sign-out, so screens reading currentUser.displayName directly
+// would show stale data after an edit until the next full auth transition.
+// The account-editing screen updates through this, so anything watching it
+// (e.g. the Profile screen) reflects the edit immediately.
+final currentUserProvider = StreamProvider<User?>((ref) {
+  return FirebaseAuth.instance.userChanges();
+});
+
 // Stream provider that yields the documents of the currently logged-in user.
 // autoDispose + watching authStateChangesProvider means: on logout the
 // stream is torn down (uid becomes null -> empty list), and on the next

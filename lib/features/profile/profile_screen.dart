@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:go_router/go_router.dart';
@@ -8,9 +9,17 @@ import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/widgets/app_card.dart';
 import '../../core/widgets/responsive_page.dart';
+import '../home/models/document.dart';
+import 'account_screen.dart';
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
+
+  static void _comingSoon(BuildContext context, String feature) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('$feature is coming soon')),
+    );
+  }
 
   // Fully signs the user out — clears both the Firebase session and the
   // cached Google account, so the account picker shows again next time
@@ -43,7 +52,9 @@ class ProfileScreen extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final docCount = ref.watch(userDocumentsProvider).valueOrNull?.length ?? 0;
+    final user = ref.watch(currentUserProvider).valueOrNull ?? FirebaseAuth.instance.currentUser;
     return Scaffold(
       appBar: AppBar(title: const Text('Profile')),
       body: SafeArea(
@@ -55,29 +66,36 @@ class ProfileScreen extends StatelessWidget {
                   children: [
                     Stack(
                       children: [
-                        const CircleAvatar(
+                        CircleAvatar(
                           radius: 44,
                           backgroundColor: AppColors.surfaceContainerHigh,
-                          child: Icon(Symbols.person, size: 44, color: AppColors.primary),
+                          backgroundImage:
+                              user?.photoURL != null ? NetworkImage(user!.photoURL!) : null,
+                          child: user?.photoURL == null
+                              ? const Icon(Symbols.person, size: 44, color: AppColors.primary)
+                              : null,
                         ),
                         Positioned(
                           right: 0,
                           bottom: 0,
-                          child: Container(
-                            padding: const EdgeInsets.all(6),
-                            decoration: const BoxDecoration(
-                              color: AppColors.primary,
-                              shape: BoxShape.circle,
+                          child: GestureDetector(
+                            onTap: () => context.push('/account'),
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: const BoxDecoration(
+                                color: AppColors.primary,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Symbols.edit, size: 14, color: Colors.white),
                             ),
-                            child: const Icon(Symbols.edit, size: 14, color: Colors.white),
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: AppSpacing.sm),
-                    Text(FirebaseAuth.instance.currentUser?.displayName ?? 'User', style: AppTextStyles.headlineMd()),
-                    Text(FirebaseAuth.instance.currentUser?.email ?? 'Senior Nursing Student • St. Jude Medical',
-                        style: AppTextStyles.bodySm()),
+                    Text(user?.displayName ?? 'User', style: AppTextStyles.headlineMd()),
+                    if (user?.email != null)
+                      Text(user!.email!, style: AppTextStyles.bodySm()),
                   ],
                 ),
               ),
@@ -91,38 +109,10 @@ class ProfileScreen extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: AppSpacing.sm),
-              const _StatCard(icon: Symbols.schedule, value: '124', label: 'Total Hours'),
-              const SizedBox(height: AppSpacing.sm),
-              const _StatCard(icon: Symbols.description, value: '48', label: 'Docs Uploaded'),
-              const SizedBox(height: AppSpacing.sm),
-              AppCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 36,
-                          height: 36,
-                          decoration: BoxDecoration(
-                            color: AppColors.tertiary.withValues(alpha: 0.10),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: const Icon(Symbols.verified, color: AppColors.tertiary),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text('92%', style: AppTextStyles.display()),
-                    Text('Mastery Score', style: AppTextStyles.bodySm()),
-                    const SizedBox(height: AppSpacing.xs),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: const LinearProgressIndicator(value: 0.92, minHeight: 6),
-                    ),
-                  ],
-                ),
-              ),
+              // Total Hours and Mastery Score removed — there's no study-time
+              // tracking or quiz-mastery scoring built yet, and showing made
+              // up numbers here would be worse than showing nothing.
+              _StatCard(icon: Symbols.description, value: '$docCount', label: 'Docs Uploaded'),
               const SizedBox(height: AppSpacing.lg),
 
               AppCard(
@@ -133,30 +123,21 @@ class ProfileScreen extends StatelessWidget {
                       icon: Symbols.person_outline,
                       title: 'Account',
                       subtitle: 'Personal info, school credentials',
-                      onTap: () {},
+                      onTap: () => context.push('/account'),
                     ),
                     const Divider(height: 1, indent: 56),
                     _SettingsRow(
                       icon: Symbols.notifications_none,
                       title: 'Notifications',
                       subtitle: 'Study reminders, exam alerts',
-                      trailing: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: AppColors.tertiary.withValues(alpha: 0.10),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text('Active',
-                            style: AppTextStyles.labelSm(color: AppColors.tertiary)),
-                      ),
-                      onTap: () {},
+                      onTap: () => _comingSoon(context, 'Notification settings'),
                     ),
                     const Divider(height: 1, indent: 56),
                     _SettingsRow(
                       icon: Symbols.shield,
                       title: 'Data Privacy',
                       subtitle: 'Storage settings and security',
-                      onTap: () {},
+                      onTap: () => _comingSoon(context, 'Data & privacy settings'),
                     ),
                     const Divider(height: 1, indent: 56),
                     _SettingsRow(

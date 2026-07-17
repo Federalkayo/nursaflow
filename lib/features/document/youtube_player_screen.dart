@@ -21,8 +21,18 @@ class YoutubePlayerScreen extends StatefulWidget {
 /// leaving YouTube's broken-looking error screen on display, we hand off
 /// to the YouTube app / browser, which always works.
 class _EmbedBlockedFallback extends StatelessWidget {
-  const _EmbedBlockedFallback({required this.video});
+  const _EmbedBlockedFallback({required this.video, required this.error});
   final YoutubeResource video;
+  final YoutubeError error;
+
+  String get _debugLabel => switch (error.code) {
+        0 => '',
+        2 => 'Invalid video ID (code 2)',
+        5 => 'HTML5/WebView player error (code 5)',
+        100 || 105 => 'Video not found (code ${error.code})',
+        101 || 150 || 152 => 'Owner disabled embedding (code ${error.code})',
+        final c => 'Unrecognised error code $c',
+      };
 
   @override
   Widget build(BuildContext context) {
@@ -40,6 +50,15 @@ class _EmbedBlockedFallback extends StatelessWidget {
               "This video can't be played in-app",
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.white70),
+            ),
+            // TEMPORARY — remove once we've confirmed the real cause from a
+            // test device. Not gated behind kDebugMode on purpose so it
+            // shows in your release-mode Infinix test build too.
+            const SizedBox(height: 4),
+            Text(
+              _debugLabel,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white38, fontSize: 12),
             ),
             const SizedBox(height: 16),
             FilledButton.icon(
@@ -110,7 +129,7 @@ class _YoutubePlayerScreenState extends State<YoutubePlayerScreen> {
               controller: _controller,
               builder: (context, value) {
                 if (value.hasError) {
-                  return _EmbedBlockedFallback(video: widget.video);
+                  return _EmbedBlockedFallback(video: widget.video, error: value.error);
                 }
                 return YoutubePlayer(
                   controller: _controller,

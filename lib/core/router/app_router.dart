@@ -16,6 +16,7 @@ import '../../features/document/resources_screen.dart';
 import '../../features/tutor/ai_tutor_screen.dart';
 import '../../features/planner/study_planner_screen.dart';
 import '../../features/profile/profile_screen.dart';
+import '../../features/profile/account_screen.dart';
 import '../../features/subscription/subscription_screen.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -37,6 +38,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/subscription',
         parentNavigatorKey: _rootNavigatorKey,
         builder: (context, state) => const SubscriptionScreen(),
+      ),
+      GoRoute(
+        path: '/account',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => const AccountScreen(),
       ),
       GoRoute(
         path: '/upload',

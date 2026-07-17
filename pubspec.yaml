@@ -32,6 +32,7 @@ dependencies:
 
   # File picking for lecture note uploads
   file_picker: ^8.1.2
+  flutter_image_compress: ^2.3.0
 
   # Local persistence (offline cache, onboarding "seen" flag)
   shared_preferences: ^2.3.2
@@ -43,7 +44,7 @@ dependencies:
   webview_flutter: ^4.9.0
 
   # In-app YouTube playback for Resources tab lecture videos
-  youtube_player_iframe: ^5.2.1
+  youtube_player_iframe: ^6.0.2
 
   # Shimmer skeleton screens for list/content loading states
   shimmer: ^3.0.0

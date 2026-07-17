@@ -17,6 +17,13 @@ const GOOGLE_API_KEY = defineSecret("GOOGLE_API_KEY");
 // but it's cached alongside the others for a consistent single fetch.
 const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
+// Bump this whenever a change to fetchYoutube/fetchBooks/fetchMedlinePlus
+// would make already-cached documents' resources.* content wrong or
+// outdated (new fields, fixed parsing, etc.) — this makes CACHE_TTL_MS
+// stale immediately for old data instead of silently serving broken
+// results for up to 30 days after a fix ships.
+const RESOURCES_SCHEMA_VERSION = 3;
+
 /**
  * Ask YouTube's oEmbed endpoint whether a video allows embedded playback.
  * 200 -> embeddable. 401/403/404 (owner disabled embedding, or video is
@@ -111,7 +118,7 @@ async function fetchYoutube(query) {
     .filter((item) => item.id?.videoId)
     .map((item) => ({
       videoId: item.id.videoId,
-      title: item.snippet?.title || "Untitled",
+      title: decodeEntities(item.snippet?.title) || "Untitled",
       channelTitle: item.snippet?.channelTitle || "",
       thumbnailUrl:
         item.snippet?.thumbnails?.medium?.url || item.snippet?.thumbnails?.default?.url || "",
@@ -185,6 +192,21 @@ async function fetchMedlinePlus(query) {
 }
 
 /**
+ * Decodes the small set of HTML entities that show up in API text fields
+ * (YouTube titles, MedlinePlus snippets) — not a general HTML decoder, just
+ * the handful that actually appear in these feeds. Order matters: &amp;
+ * must run last, or "&amp;lt;" would incorrectly become "&lt;" then "<".
+ */
+function decodeEntities(s) {
+  return (s || "")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
+/**
  * MedlinePlus's search endpoint returns XML, and there's no XML parser
  * already in this functions package — rather than add a dependency for one
  * feed, this pulls out just the few fields needed with regex against the
@@ -193,13 +215,6 @@ async function fetchMedlinePlus(query) {
  */
 function parseMedlinePlusXml(xml) {
   const documents = xml.split("<document ").slice(1);
-  const decodeEntities = (s) =>
-    (s || "")
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .replace(/&amp;/g, "&");
   const stripTags = (s) => decodeEntities(s).replace(/<[^>]+>/g, "").trim();
   return documents
     .map((docChunk) => {
@@ -254,9 +269,12 @@ const fetchResources = onCall(
     }
     const doc = docSnap.data();
 
-    // Serve from cache if it's still fresh.
+    // Serve from cache only if it's fresh AND matches the current schema —
+    // a version bump invalidates old-format cached data immediately rather
+    // than waiting out the full TTL.
     const fetchedAtMs = doc.resourcesFetchedAt?.toMillis?.();
-    if (doc.resources && fetchedAtMs && Date.now() - fetchedAtMs < CACHE_TTL_MS) {
+    const cacheIsCurrentSchema = doc.resources?.schemaVersion === RESOURCES_SCHEMA_VERSION;
+    if (doc.resources && fetchedAtMs && cacheIsCurrentSchema && Date.now() - fetchedAtMs < CACHE_TTL_MS) {
       return doc.resources;
     }
 
@@ -284,6 +302,7 @@ const fetchResources = onCall(
       medline,
       query: topic,
       updatedAt: new Date().toISOString(),
+      schemaVersion: RESOURCES_SCHEMA_VERSION,
     };
 
     await docRef.update({
