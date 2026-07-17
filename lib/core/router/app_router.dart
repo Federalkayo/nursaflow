@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../features/onboarding/onboarding_screen.dart';
 import '../../features/auth/sign_up_screen.dart';
+import '../../features/splash/splash_screen.dart';
+import '../../features/home/models/document.dart' show authStateChangesProvider;
 import '../../features/shell/main_shell.dart';
 import '../../features/home/home_screen.dart';
 import '../../features/home/library_screen.dart';
@@ -21,11 +23,56 @@ import '../../features/subscription/subscription_screen.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 
+// Firebase's cached auth persistence means authStateChanges() can fire
+// within a single frame on a warm start — without this, the splash screen
+// would mount and unmount before its pulse animation is even visible. This
+// is NOT autoDispose, so it only ever delays the very first app launch, not
+// every later sign-in/out redirect.
+final _splashMinDurationProvider = FutureProvider<void>((ref) async {
+  await Future.delayed(const Duration(milliseconds: 1200));
+});
+
 final appRouterProvider = Provider<GoRouter>((ref) {
+  // Watching this (rather than reading FirebaseAuth.instance.currentUser once)
+  // means a sign-in or sign-out rebuilds this provider — and with it, the
+  // GoRouter instance — so the redirect below always sees fresh auth state.
+  final authState = ref.watch(authStateChangesProvider);
+  final minSplashElapsed = ref.watch(_splashMinDurationProvider);
+
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
-    initialLocation: '/onboarding',
+    initialLocation: '/splash',
+    redirect: (context, state) {
+      final loc = state.matchedLocation;
+      final isSplash = loc == '/splash';
+      final isAuthRoute = loc == '/auth';
+      final isOnboarding = loc == '/onboarding';
+
+      // Still waiting on the first authStateChanges() event — park on the
+      // splash screen rather than guessing signed-in/signed-out.
+      final authResolved =
+          (authState.hasValue || authState.hasError) && minSplashElapsed.hasValue;
+      if (!authResolved) {
+        return isSplash ? null : '/splash';
+      }
+
+      final loggedIn = authState.valueOrNull != null;
+
+      if (!loggedIn) {
+        // Public routes for a signed-out user. Everything else bounces to
+        // onboarding, which itself links into /auth.
+        return (isAuthRoute || isOnboarding) ? null : '/onboarding';
+      }
+
+      // Signed in — don't let them land back on splash/auth/onboarding.
+      if (isSplash || isAuthRoute || isOnboarding) return '/home';
+      return null;
+    },
     routes: [
+      GoRoute(
+        path: '/splash',
+        builder: (context, state) => const SplashScreen(),
+      ),
       GoRoute(
         path: '/onboarding',
         builder: (context, state) => const OnboardingScreen(),

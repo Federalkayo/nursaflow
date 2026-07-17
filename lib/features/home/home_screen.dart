@@ -19,6 +19,13 @@ import 'models/study_stats.dart';
 bool _isSameDay(DateTime a, DateTime b) =>
     a.year == b.year && a.month == b.month && a.day == b.day;
 
+String _greeting() {
+  final hour = DateTime.now().hour;
+  if (hour < 12) return 'Good morning,';
+  if (hour < 17) return 'Good afternoon,';
+  return 'Good evening,';
+}
+
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
@@ -66,10 +73,16 @@ class HomeScreen extends ConsumerWidget {
     final studyLogAsync = ref.watch(studyLogProvider);
     final settingsAsync = ref.watch(userStudySettingsProvider);
     final plannerAsync = ref.watch(plannerTasksProvider);
-    final user = FirebaseAuth.instance.currentUser;
+
+    // Reactive user — currentUserProvider re-emits on updateDisplayName /
+    // updatePhotoURL (via user.reload()), unlike a one-off
+    // FirebaseAuth.instance.currentUser read. That one-off read is why the
+    // avatar/name here went stale after editing them on the Account screen.
+    final user = ref.watch(currentUserProvider).valueOrNull ?? FirebaseAuth.instance.currentUser;
     final fullName = user?.displayName ?? 'User';
     final firstName = fullName.split(' ').first;
     final uid = user?.uid;
+    final photoUrl = user?.photoURL;
 
     final logEntries = studyLogAsync.valueOrNull ?? const [];
     final streak = computeStreak(logEntries);
@@ -110,11 +123,28 @@ class HomeScreen extends ConsumerWidget {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    Row(
                       children: [
-                        Text('Good morning,', style: AppTextStyles.bodyMd()),
-                        Text(firstName, style: AppTextStyles.headlineLgMobile()),
+                        GestureDetector(
+                          onTap: () => context.push('/profile'),
+                          child: CircleAvatar(
+                            radius: 22,
+                            backgroundColor: AppColors.surfaceContainerHigh,
+                            backgroundImage:
+                                photoUrl != null ? NetworkImage(photoUrl) : null,
+                            child: photoUrl == null
+                                ? const Icon(Symbols.person, size: 22, color: AppColors.primary)
+                                : null,
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(_greeting(), style: AppTextStyles.bodyMd()),
+                            Text(firstName, style: AppTextStyles.headlineLgMobile()),
+                          ],
+                        ),
                       ],
                     ),
                     StreakChip(days: streak),
