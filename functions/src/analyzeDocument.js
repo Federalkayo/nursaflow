@@ -8,6 +8,7 @@ const { extractText } = require("./pdfText");
 const { buildAnalysisPrompt } = require("./prompts");
 const { fallbackAnalysis } = require("./fallback");
 const { generateIllustration } = require("./imageGen");
+const { createNotification } = require("./notifications");
 
 /**
  * Fires whenever a new document is created at
@@ -153,6 +154,14 @@ const analyzeDocument = onDocumentCreated(
     }
 
     await batch.commit();
+
+    await createNotification(userId, {
+      type: "documentReady",
+      title: "Analysis complete",
+      body: `"${title}" is ready — summary, flashcards, and quiz are in.`,
+      refId: documentId,
+    });
+
     logger.info(`Finished analyzing document ${documentId}`);
   }
 );

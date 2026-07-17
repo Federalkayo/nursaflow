@@ -5,8 +5,12 @@ import '../../../core/theme/app_text_styles.dart';
 /// The 🔥 N Day Streak chip that appears in the header of nearly every
 /// screen in the Stitch export.
 class StreakChip extends StatelessWidget {
-  const StreakChip({super.key, required this.days});
+  const StreakChip({super.key, required this.days, this.suffix});
   final int days;
+
+  // e.g. "Keep it alive today" / "Secured for today" — shown after a
+  // separator dot. Null renders just the bare streak count.
+  final String? suffix;
 
   @override
   Widget build(BuildContext context) {
@@ -23,6 +27,10 @@ class StreakChip extends StatelessWidget {
           const SizedBox(width: 4),
           Text('$days Day Streak',
               style: AppTextStyles.labelSm(color: AppColors.onSecondaryContainer)),
+          if (suffix != null) ...[
+            Text('  •  ', style: AppTextStyles.labelSm(color: AppColors.onSecondaryContainer)),
+            Text(suffix!, style: AppTextStyles.labelSm(color: AppColors.onSecondaryContainer)),
+          ],
         ],
       ),
     );

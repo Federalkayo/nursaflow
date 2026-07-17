@@ -130,7 +130,7 @@ class ProfileScreen extends ConsumerWidget {
                       icon: Symbols.notifications_none,
                       title: 'Notifications',
                       subtitle: 'Study reminders, exam alerts',
-                      onTap: () => _comingSoon(context, 'Notification settings'),
+                      onTap: () => context.push('/notifications'),
                     ),
                     const Divider(height: 1, indent: 56),
                     _SettingsRow(

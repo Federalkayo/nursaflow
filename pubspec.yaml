@@ -52,12 +52,18 @@ dependencies:
   # Text-to-speech for reading AI Tutor replies aloud
   flutter_tts: ^4.2.0
 
+  # Notifications
+  firebase_messaging: ^15.1.3
+  flutter_local_notifications: ^18.0.1
+  timezone: ^0.9.4
+
   # Utilities
   intl: ^0.19.0
   cupertino_icons: ^1.0.8
 
   # Opens YouTube/Google Books/MedlinePlus links from the Resources tab
   url_launcher: ^6.3.1
+  flutter_timezone: ^5.1.0
 
 dev_dependencies:
   flutter_test:

@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
+import 'core/services/local_notifications_service.dart';
+import 'core/services/push_notifications_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -13,6 +15,9 @@ Future<void> main() async {
   // TODO: uncomment once `flutterfire configure` has generated
   // firebase_options.dart for this project.
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  await LocalNotificationsService.init();
+  await PushNotificationsService.init();
 
   runApp(const ProviderScope(child: NursaFlowApp()));
 }

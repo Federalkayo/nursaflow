@@ -20,6 +20,7 @@ import '../../features/planner/study_planner_screen.dart';
 import '../../features/profile/profile_screen.dart';
 import '../../features/profile/account_screen.dart';
 import '../../features/subscription/subscription_screen.dart';
+import '../../features/notifications/notifications_screen.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -85,6 +86,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/subscription',
         parentNavigatorKey: _rootNavigatorKey,
         builder: (context, state) => const SubscriptionScreen(),
+      ),
+      GoRoute(
+        path: '/notifications',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => const NotificationsScreen(),
       ),
       GoRoute(
         path: '/account',

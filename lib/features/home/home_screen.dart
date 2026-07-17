@@ -15,6 +15,7 @@ import 'widgets/document_status_card.dart';
 import 'widgets/streak_chip.dart';
 import 'models/document.dart';
 import 'models/study_stats.dart';
+import '../notifications/models/app_notification.dart';
 
 bool _isSameDay(DateTime a, DateTime b) =>
     a.year == b.year && a.month == b.month && a.day == b.day;
@@ -24,6 +25,64 @@ String _greeting() {
   if (hour < 12) return 'Good morning,';
   if (hour < 17) return 'Good afternoon,';
   return 'Good evening,';
+}
+
+// The "what should I do next" line under the name — cheapest way to make
+// the header actionable without inventing new data (XP, streak goals,
+// etc). Priority: an exam/task due today beats "pick up where you left
+// off" beats the generic fallback.
+String _headerSubtitle({
+  required List<StudyTask> todayTasks,
+  required StudyDocument? continueReading,
+}) {
+  if (todayTasks.isNotEmpty) {
+    return todayTasks.length == 1
+        ? '1 task due today — let\'s get it done'
+        : '${todayTasks.length} tasks due today';
+  }
+  if (continueReading != null) {
+    return 'Pick up "${continueReading.title}" where you left off';
+  }
+  return 'Ready for today\'s study session?';
+}
+
+class _NotificationBell extends StatelessWidget {
+  const _NotificationBell({required this.unreadCount});
+  final int unreadCount;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => context.push('/notifications'),
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: AppColors.surfaceContainerHigh,
+          shape: BoxShape.circle,
+        ),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            const Icon(Symbols.notifications, size: 22, color: AppColors.primary),
+            if (unreadCount > 0)
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Container(
+                  width: 9,
+                  height: 9,
+                  decoration: const BoxDecoration(
+                    color: AppColors.secondary,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class HomeScreen extends ConsumerWidget {
@@ -120,34 +179,65 @@ class HomeScreen extends ConsumerWidget {
             SliverToBoxAdapter(
               child: ResponsivePage(
                 padBottom: false,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        GestureDetector(
-                          onTap: () => context.push('/profile'),
-                          child: CircleAvatar(
-                            radius: 22,
-                            backgroundColor: AppColors.surfaceContainerHigh,
-                            backgroundImage:
-                                photoUrl != null ? NetworkImage(photoUrl) : null,
-                            child: photoUrl == null
-                                ? const Icon(Symbols.person, size: 22, color: AppColors.primary)
-                                : null,
+                        Expanded(
+                          child: Row(
+                            children: [
+                              GestureDetector(
+                                onTap: () => context.push('/profile'),
+                                child: CircleAvatar(
+                                  radius: 22,
+                                  backgroundColor: AppColors.surfaceContainerHigh,
+                                  backgroundImage:
+                                      photoUrl != null ? NetworkImage(photoUrl) : null,
+                                  child: photoUrl == null
+                                      ? const Icon(Symbols.person, size: 22, color: AppColors.primary)
+                                      : null,
+                                ),
+                              ),
+                              const SizedBox(width: AppSpacing.sm),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(_greeting(), style: AppTextStyles.bodyMd()),
+                                    Text(
+                                      firstName,
+                                      style: AppTextStyles.headlineLgMobile(),
+                                      overflow: TextOverflow.ellipsis,
+                                      maxLines: 1,
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      _headerSubtitle(
+                                        todayTasks: todayTasks,
+                                        continueReading: continueReading,
+                                      ),
+                                      style: AppTextStyles.bodySm(color: AppColors.outline),
+                                      overflow: TextOverflow.ellipsis,
+                                      maxLines: 1,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                         const SizedBox(width: AppSpacing.sm),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(_greeting(), style: AppTextStyles.bodyMd()),
-                            Text(firstName, style: AppTextStyles.headlineLgMobile()),
-                          ],
-                        ),
+                        _NotificationBell(unreadCount: ref.watch(unreadNotificationsCountProvider)),
                       ],
                     ),
-                    StreakChip(days: streak),
+                    const SizedBox(height: AppSpacing.sm),
+                    StreakChip(
+                      days: streak,
+                      suffix: todayMinutes > 0 ? 'Secured for today' : 'Keep it alive today',
+                    ),
                   ],
                 ),
               ),
