@@ -69,9 +69,13 @@ class _YoutubePlayerScreenState extends State<YoutubePlayerScreen> {
       params: const YoutubePlayerParams(
         showFullscreenButton: true,
         strictRelatedVideos: true,
-        // Explicit origin avoids a common mobile-WebView false positive
-        // (error 152 / "video unavailable") caused by a missing referrer.
-        origin: 'https://www.youtube.com',
+        // Deliberately not setting `origin` here. It's documented as "your
+        // domain" — on mobile it becomes the WebView's actual baseUrl, so
+        // setting it to youtube.com (as this used to) told the WebView to
+        // pretend it was being served FROM youtube.com, which broke the
+        // JS<->Dart postMessage bridge for every video regardless of that
+        // video's own embed permissions. Leaving it unset lets the package
+        // fall back to its own documented `host` default instead.
       ),
     )..loadVideoById(videoId: widget.video.videoId);
   }

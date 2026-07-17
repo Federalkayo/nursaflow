@@ -114,6 +114,7 @@ const analyzeDocument = onDocumentCreated(
     await docRef.update({
       status: "ready",
       pageCount,
+      mainTopic: analysis.mainTopic || course,
       clinicalOverview: analysis.clinicalOverview || "",
       keyQuote: analysis.keyQuote || "",
       keyPrinciples: analysis.keyPrinciples || [],

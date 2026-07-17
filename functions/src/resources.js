@@ -18,13 +18,84 @@ const GOOGLE_API_KEY = defineSecret("GOOGLE_API_KEY");
 const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 /**
+ * Ask YouTube's oEmbed endpoint whether a video allows embedded playback.
+ * 200 -> embeddable. 401/403/404 (owner disabled embedding, or video is
+ * private/deleted) -> not embeddable. Any other failure (network blip,
+ * 5xx) defaults to true so a transient error never wrongly hides "Watch
+ * in App" for a video that actually would have played fine.
+ */
+async function checkEmbeddable(videoId) {
+  const url = `https://www.youtube.com/oembed?url=${encodeURIComponent(
+    `https://www.youtube.com/watch?v=${videoId}`
+  )}&format=json`;
+  try {
+    const res = await fetch(url);
+    if (res.status === 401 || res.status === 403 || res.status === 404) return false;
+    return true;
+  } catch (err) {
+    logger.warn(`oEmbed check failed for ${videoId}, defaulting to embeddable`, err);
+    return true;
+  }
+}
+
+/**
+ * Parses YouTube's ISO 8601 video duration (e.g. "PT14M32S", "PT1H2M") into
+ * a short student-facing label like "14 min" or "1h 2m". Returns "" if the
+ * string doesn't parse, so callers can safely omit the badge rather than
+ * show something broken.
+ */
+function formatDuration(iso8601) {
+  const match = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(iso8601 || "");
+  if (!match) return "";
+  const hours = parseInt(match[1] || "0", 10);
+  const minutes = parseInt(match[2] || "0", 10);
+  const seconds = parseInt(match[3] || "0", 10);
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes} min`;
+  return `${seconds}s`;
+}
+
+/**
+ * Looks up video lengths for a batch of video IDs via videos.list. This is
+ * a single call regardless of how many IDs (up to 50) — 1 quota unit total,
+ * versus 100 units for the search call itself — so this is cheap even
+ * though it runs on every cache-miss alongside the search.
+ * Returns a Map<videoId, durationLabel>.
+ */
+async function fetchDurations(videoIds) {
+  if (videoIds.length === 0) return new Map();
+  const params = new URLSearchParams({
+    part: "contentDetails",
+    id: videoIds.join(","),
+    key: GOOGLE_API_KEY.value(),
+  });
+  try {
+    const res = await fetch(`https://www.googleapis.com/youtube/v3/videos?${params}`);
+    if (!res.ok) {
+      logger.warn(`videos.list duration lookup failed: ${res.status}`);
+      return new Map();
+    }
+    const data = await res.json();
+    return new Map(
+      (data.items || []).map((item) => [
+        item.id,
+        formatDuration(item.contentDetails?.duration),
+      ])
+    );
+  } catch (err) {
+    logger.warn("videos.list duration lookup threw", err);
+    return new Map();
+  }
+}
+
+/**
  * Search YouTube for lecture-style videos on a nursing topic.
- * Returns up to 5 results: { videoId, title, channelTitle, thumbnailUrl }.
+ * Returns up to 5 results: { videoId, title, channelTitle, thumbnailUrl, embeddable, duration }.
  */
 async function fetchYoutube(query) {
   const params = new URLSearchParams({
     part: "snippet",
-    q: `${query} nursing lecture explained`,
+    q: `${query} nursing lecture`,
     type: "video",
     maxResults: "5",
     safeSearch: "strict",
@@ -36,7 +107,7 @@ async function fetchYoutube(query) {
     throw new Error(`YouTube API error ${res.status}: ${await res.text().catch(() => "")}`);
   }
   const data = await res.json();
-  return (data.items || [])
+  const videos = (data.items || [])
     .filter((item) => item.id?.videoId)
     .map((item) => ({
       videoId: item.id.videoId,
@@ -45,7 +116,22 @@ async function fetchYoutube(query) {
       thumbnailUrl:
         item.snippet?.thumbnails?.medium?.url || item.snippet?.thumbnails?.default?.url || "",
     }));
+
+  // oEmbed check (embeddability) and duration lookup run in parallel with
+  // each other — they're independent of one another, just both dependent
+  // on the search results above. Both get cached on the document, so this
+  // full cost is paid once per topic, not per student.
+  const [embeddableFlags, durations] = await Promise.all([
+    Promise.all(videos.map((v) => checkEmbeddable(v.videoId))),
+    fetchDurations(videos.map((v) => v.videoId)),
+  ]);
+  return videos.map((v, i) => ({
+    ...v,
+    embeddable: embeddableFlags[i],
+    duration: durations.get(v.videoId) || "",
+  }));
 }
+
 
 /**
  * Search Google Books for authoritative nursing textbook references on a topic.
@@ -53,7 +139,7 @@ async function fetchYoutube(query) {
  */
 async function fetchBooks(query) {
   const params = new URLSearchParams({
-    q: `${query} nursing textbook`,
+    q: `${query} nursing textbook subject:medicine`,
     maxResults: "5",
     printType: "books",
     key: GOOGLE_API_KEY.value(),
@@ -107,7 +193,14 @@ async function fetchMedlinePlus(query) {
  */
 function parseMedlinePlusXml(xml) {
   const documents = xml.split("<document ").slice(1);
-  const stripTags = (s) => (s || "").replace(/<[^>]+>/g, "").trim();
+  const decodeEntities = (s) =>
+    (s || "")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&amp;/g, "&");
+  const stripTags = (s) => decodeEntities(s).replace(/<[^>]+>/g, "").trim();
   return documents
     .map((docChunk) => {
       const urlMatch = docChunk.match(/url="([^"]+)"/);
@@ -167,7 +260,7 @@ const fetchResources = onCall(
       return doc.resources;
     }
 
-    const topic = doc.title || doc.course || "nursing fundamentals";
+    const topic = doc.mainTopic || doc.title || doc.course || "nursing fundamentals";
     logger.info(`Fetching resources for document ${documentId}`, { topic });
 
     const [youtube, books, medline] = await Promise.all([
@@ -185,7 +278,13 @@ const fetchResources = onCall(
       }),
     ]);
 
-    const resources = { youtube, books, medline };
+    const resources = {
+      youtube,
+      books,
+      medline,
+      query: topic,
+      updatedAt: new Date().toISOString(),
+    };
 
     await docRef.update({
       resources,

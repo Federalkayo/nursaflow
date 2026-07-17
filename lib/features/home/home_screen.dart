@@ -187,7 +187,7 @@ class HomeScreen extends ConsumerWidget {
                       Text('Continue Reading', style: AppTextStyles.headlineMd()),
                       const SizedBox(height: AppSpacing.sm),
                       AppCard(
-                        onTap: () => context.push('/document/${continueReading.id}'),
+                        onTap: () => context.push('/document/${continueReading.id}/summary'),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -365,17 +365,36 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
-class _QuickStatsRow extends StatelessWidget {
+class _QuickStatsRow extends ConsumerWidget {
   const _QuickStatsRow({required this.docs});
   final List<StudyDocument> docs;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final totalDocs = docs.length;
     final scoredDocs = docs.where((d) => d.progress > 0).toList();
-    final avgScore = scoredDocs.isEmpty 
-        ? '0%' 
+    final avgScore = scoredDocs.isEmpty
+        ? '0%'
         : '${(scoredDocs.map((d) => d.progress).reduce((a, b) => a + b) / scoredDocs.length * 100).round()}%';
+
+    // Same "next exam" logic as the Planner screen: soonest upcoming
+    // isExam:true entry, days rounded up so an exam later today still
+    // reads as "0d" rather than a negative/rounded-down count.
+    final tasksAsync = ref.watch(plannerTasksProvider);
+    final nextExamValue = tasksAsync.when(
+      data: (tasks) {
+        final now = DateTime.now();
+        final upcomingExams = tasks
+            .where((t) => t.isExam && t.dueDate.isAfter(now))
+            .toList()
+          ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
+        if (upcomingExams.isEmpty) return '—';
+        final days = upcomingExams.first.dueDate.difference(now).inDays + 1;
+        return '${days}d';
+      },
+      loading: () => '—',
+      error: (_, __) => '—',
+    );
 
     return Row(
       children: [
@@ -385,9 +404,9 @@ class _QuickStatsRow extends StatelessWidget {
         Expanded(
             child: _StatPill(icon: Symbols.quiz, value: avgScore, label: 'Avg. score')),
         const SizedBox(width: AppSpacing.sm),
-        const Expanded(
+        Expanded(
             child: _StatPill(
-                icon: Symbols.event_upcoming, value: '3d', label: 'Next exam')),
+                icon: Symbols.event_upcoming, value: nextExamValue, label: 'Next exam')),
       ],
     );
   }

@@ -7,12 +7,21 @@ class YoutubeResource {
     required this.title,
     required this.channelTitle,
     required this.thumbnailUrl,
+    this.embeddable = true,
+    this.duration = '',
   });
 
   final String videoId;
   final String title;
   final String channelTitle;
   final String thumbnailUrl;
+  // Whether the video's owner allows embedded playback (checked server-side
+  // via YouTube's oEmbed endpoint). Defaults to true so documents cached
+  // before this field existed still show "Watch in App" until their next
+  // natural refresh, rather than being misclassified as external-only.
+  final bool embeddable;
+  // e.g. "14 min" or "1h 2m" — empty string if unavailable.
+  final String duration;
 
   String get watchUrl => 'https://www.youtube.com/watch?v=$videoId';
 
@@ -22,6 +31,8 @@ class YoutubeResource {
       title: map['title']?.toString() ?? 'Untitled',
       channelTitle: map['channelTitle']?.toString() ?? '',
       thumbnailUrl: map['thumbnailUrl']?.toString() ?? '',
+      embeddable: map['embeddable'] as bool? ?? true,
+      duration: map['duration']?.toString() ?? '',
     );
   }
 }

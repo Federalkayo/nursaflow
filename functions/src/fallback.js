@@ -5,6 +5,7 @@
  */
 function fallbackAnalysis(title, course) {
   return {
+    mainTopic: course,
     clinicalOverview: `This document covers key concepts from "${title}" in ${course}. We weren't able to generate a full AI summary this time — try re-uploading, or ask the AI Tutor directly about topics from this document.`,
     keyPrinciples: [
       { title: "Review Core Concepts", body: "Revisit your lecture notes for the foundational definitions covered in this material." },

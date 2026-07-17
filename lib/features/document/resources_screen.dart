@@ -31,6 +31,14 @@ class ResourcesScreen extends ConsumerWidget {
     );
   }
 
+  void _handleYoutubeTap(BuildContext context, YoutubeResource video) {
+    if (video.embeddable) {
+      _playInApp(context, video);
+    } else {
+      _open(video.watchUrl);
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final resourcesAsync = ref.watch(documentResourcesProvider(documentId));
@@ -58,19 +66,23 @@ class ResourcesScreen extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       if (resources.youtube.isNotEmpty) ...[
-                        const _SectionHeader(
+                        _SectionHeader(
                           icon: Symbols.play_circle,
-                          title: 'YouTube Lectures',
+                          title: 'YouTube Lectures (${resources.youtube.length})',
                         ),
                         const SizedBox(height: AppSpacing.sm),
-                        for (final v in resources.youtube)
-                          _YoutubeCard(video: v, onTap: () => _playInApp(context, v)),
+                        for (final (i, v) in resources.youtube.indexed)
+                          _YoutubeCard(
+                            video: v,
+                            isRecommended: i == 0,
+                            onTap: () => _handleYoutubeTap(context, v),
+                          ),
                         const SizedBox(height: AppSpacing.lg),
                       ],
                       if (resources.books.isNotEmpty) ...[
-                        const _SectionHeader(
+                        _SectionHeader(
                           icon: Symbols.menu_book,
-                          title: 'Google Books',
+                          title: 'Google Books (${resources.books.length})',
                         ),
                         const SizedBox(height: AppSpacing.sm),
                         SizedBox(
@@ -89,9 +101,9 @@ class ResourcesScreen extends ConsumerWidget {
                         const SizedBox(height: AppSpacing.lg),
                       ],
                       if (resources.medline.isNotEmpty) ...[
-                        const _SectionHeader(
+                        _SectionHeader(
                           icon: Symbols.medical_information,
-                          title: 'MedlinePlus',
+                          title: 'MedlinePlus (${resources.medline.length})',
                         ),
                         const SizedBox(height: AppSpacing.sm),
                         for (final m in resources.medline)
@@ -136,9 +148,14 @@ class _SectionHeader extends StatelessWidget {
 }
 
 class _YoutubeCard extends StatelessWidget {
-  const _YoutubeCard({required this.video, required this.onTap});
+  const _YoutubeCard({
+    required this.video,
+    required this.onTap,
+    this.isRecommended = false,
+  });
   final YoutubeResource video;
   final VoidCallback onTap;
+  final bool isRecommended;
 
   @override
   Widget build(BuildContext context) {
@@ -166,6 +183,22 @@ class _YoutubeCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (isRecommended) ...[
+                    Row(
+                      children: [
+                        const Icon(Symbols.star, color: AppColors.secondary, size: 14),
+                        const SizedBox(width: 2),
+                        Text(
+                          'Recommended',
+                          style: AppTextStyles.bodySm().copyWith(
+                            color: AppColors.secondary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                  ],
                   Text(
                     video.title,
                     maxLines: 2,
@@ -173,11 +206,40 @@ class _YoutubeCard extends StatelessWidget {
                     style: AppTextStyles.labelLg(),
                   ),
                   const SizedBox(height: 2),
-                  Text(video.channelTitle, style: AppTextStyles.bodySm()),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          video.channelTitle,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyles.bodySm(),
+                        ),
+                      ),
+                      if (video.duration.isNotEmpty) ...[
+                        Text(' · ', style: AppTextStyles.bodySm()),
+                        Icon(Symbols.schedule, size: 12, color: AppColors.onSurfaceVariant),
+                        const SizedBox(width: 2),
+                        Text(video.duration, style: AppTextStyles.bodySm()),
+                      ],
+                    ],
+                  ),
                 ],
               ),
             ),
-            const Icon(Symbols.play_circle, color: AppColors.primary, size: 28),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  video.embeddable ? Symbols.play_circle : Symbols.open_in_new,
+                  color: AppColors.primary,
+                  size: 28,
+                ),
+                if (!video.embeddable) ...[
+                  const SizedBox(height: 2),
+                  Text('YouTube', style: AppTextStyles.bodySm()),
+                ],
+              ],
+            ),
           ],
         ),
       ),

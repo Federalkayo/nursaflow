@@ -22,6 +22,7 @@ ${contextBlock}
 Return ONLY a single JSON object (no markdown fences, no commentary) with this exact shape:
 
 {
+  "mainTopic": "the canonical clinical topic this document is actually about, 2-5 words, suitable as a search query on external resource sites (e.g. 'Chronic Kidney Disease', 'Congestive Heart Failure', 'Fluid and Electrolyte Imbalance') — this is NOT the filename or document title, which may be uninformative (e.g. 'Lecture 5.pdf', 'Week 8 Notes'); infer the real subject from the content itself",
   "clinicalOverview": "2-4 sentence overview paragraph",
   "keyQuote": "one short, memorable, clinically-relevant quote or teaching pearl about this specific topic (1-2 sentences, no attribution needed)",
   "keyPrinciples": [
@@ -52,6 +53,7 @@ Return ONLY a single JSON object (no markdown fences, no commentary) with this e
 }
 
 Requirements:
+- "mainTopic": always required, never empty. If sourceText is available, infer it from the actual content, not the title. If no sourceText, fall back to the clinical subject implied by the course name.
 - "keyQuote": always include a genuine, topic-specific quote/pearl — never generic filler
 - "keyPrinciples": exactly 3 items
 - "assessmentNote": only non-empty if this topic has a real assessment/exam component (skip for purely conceptual topics like anatomy structure with no exam technique involved)
