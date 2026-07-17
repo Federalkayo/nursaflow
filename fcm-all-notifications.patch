@@ -1,0 +1,578 @@
+diff --git a/functions/index.js b/functions/index.js
+index fecf64c..20e5160 100644
+--- a/functions/index.js
++++ b/functions/index.js
+@@ -4,7 +4,12 @@ admin.initializeApp();
+ const { analyzeDocument } = require("./src/analyzeDocument");
+ const { askTutor } = require("./src/askTutor");
+ const { fetchResources } = require("./src/resources");
++const { sendDueReminders } = require("./src/reminders");
+ 
+ exports.analyzeDocument = analyzeDocument;
+ exports.askTutor = askTutor;
+-exports.fetchResources = fetchResources;
+\ No newline at end of file
++exports.fetchResources = fetchResources;
++exports.sendDueReminders = sendDueReminders;
++
++// functions/src/paystackWebhook.js is intentionally NOT exported here yet —
++// see that file's header for what's required before it's safe to deploy.
+\ No newline at end of file
+diff --git a/functions/src/askTutor.js b/functions/src/askTutor.js
+index 85101ab..76dfc9d 100644
+--- a/functions/src/askTutor.js
++++ b/functions/src/askTutor.js
+@@ -179,6 +179,12 @@ const askTutor = onCall(
+       timestamp: admin.firestore.FieldValue.serverTimestamp(),
+     });
+ 
++    // Not calling notifyTutorReplyReady() here on purpose: this function is
++    // synchronous, so the reply written above already reached the client in
++    // this same request/response — a push notification for it would just be
++    // a duplicate. See the STUB comment on notifyTutorReplyReady in
++    // functions/src/notifications.js for when to wire it in.
++
+     return { success: true };
+   }
+ );
+diff --git a/functions/src/notifications.js b/functions/src/notifications.js
+index 169ca1d..d7e4e4b 100644
+--- a/functions/src/notifications.js
++++ b/functions/src/notifications.js
+@@ -8,9 +8,9 @@ const admin = require("firebase-admin");
+  *
+  * type must match one of the NotificationType enum values in
+  * lib/features/notifications/models/app_notification.dart (documentReady,
+- * tutorReply, streak, subscription, announcement, generic) — anything else
+- * falls back to the generic bell icon client-side, so it's safe but keep
+- * them in sync when adding a new one.
++ * tutorReply, streak, subscription, dailyReminder, announcement, generic) —
++ * anything else falls back to the generic bell icon client-side, so it's
++ * safe but keep them in sync when adding a new one.
+  */
+ async function createNotification(userId, { type, title, body, refId }) {
+   const db = admin.firestore();
+@@ -42,4 +42,36 @@ async function createNotification(userId, { type, title, body, refId }) {
+   }
+ }
+ 
+-module.exports = { createNotification };
++/**
++ * STUB — not called from anywhere yet. askTutor() (functions/src/askTutor.js)
++ * is a synchronous onCall: its reply is already in the response by the time
++ * the client sees it, so there's nothing to notify about today. Wire this
++ * in if the AI Tutor ever gets an async/background flow (e.g. a queued
++ * document Q&A job) where the reply can arrive after the request returns.
++ */
++async function notifyTutorReplyReady(userId, { documentId } = {}) {
++  return createNotification(userId, {
++    type: "tutorReply",
++    title: "Your tutor replied",
++    body: "Tap to see the answer.",
++    refId: documentId || null,
++  });
++}
++
++/**
++ * STUB — not called from anywhere yet. Call this from the Paystack webhook
++ * once it's implemented (see functions/src/paystackWebhook.js).
++ * `status` should be short and human-readable, e.g. "activated", "renewed",
++ * "payment failed".
++ */
++async function notifyPaymentUpdate(userId, { status, planName } = {}) {
++  return createNotification(userId, {
++    type: "subscription",
++    title: "Subscription update",
++    body: planName
++      ? `Your ${planName} plan is now ${status}.`
++      : `Your subscription is now ${status}.`,
++  });
++}
++
++module.exports = { createNotification, notifyTutorReplyReady, notifyPaymentUpdate };
+diff --git a/functions/src/paystackWebhook.js b/functions/src/paystackWebhook.js
+new file mode 100644
+index 0000000..5498406
+--- /dev/null
++++ b/functions/src/paystackWebhook.js
+@@ -0,0 +1,41 @@
++const { onRequest } = require("firebase-functions/v2/https");
++const { logger } = require("firebase-functions");
++const { notifyPaymentUpdate } = require("./notifications");
++
++/**
++ * STUB — deliberately NOT exported from index.js yet. Paystack integration
++ * doesn't exist anywhere else in this codebase yet either (subscription_screen.dart
++ * just has a "Paystack checkout would open here" placeholder), so this has
++ * nothing real to verify against.
++ *
++ * Before wiring this in:
++ *   1. Verify the `x-paystack-signature` header — HMAC-SHA512 of the raw
++ *      request body using your Paystack secret key — and reject on mismatch.
++ *      Skipping this means anyone can POST a fake "payment succeeded" event.
++ *   2. Map the event to a Firebase uid. Easiest: set `metadata.uid` when you
++ *      initialize the Paystack transaction, then read it back here from
++ *      `event.data.metadata.uid`.
++ *   3. Update users/{uid}.subscription (status, plan, renewsAt — whatever
++ *      shape subscription_screen.dart ends up reading) in Firestore.
++ *   4. Call notifyPaymentUpdate(uid, { status, planName }) — already wired
++ *      to send an FCM push, see functions/src/notifications.js.
++ * Then add `exports.paystackWebhook = paystackWebhook;` to index.js and
++ * point the Paystack dashboard's webhook URL at the deployed function.
++ */
++const paystackWebhook = onRequest(async (req, res) => {
++  logger.warn("paystackWebhook was called but is not implemented — see file header before wiring this up");
++  res.status(501).send("Not implemented");
++
++  // Once signature verification + uid mapping above are done, something like:
++  //
++  // const event = req.body;
++  // const uid = event?.data?.metadata?.uid;
++  // if (uid) {
++  //   await notifyPaymentUpdate(uid, {
++  //     status: event.event === "charge.success" ? "activated" : "updated",
++  //     planName: event.data?.plan?.name,
++  //   });
++  // }
++});
++
++module.exports = { paystackWebhook };
+diff --git a/functions/src/reminders.js b/functions/src/reminders.js
+new file mode 100644
+index 0000000..6b30c78
+--- /dev/null
++++ b/functions/src/reminders.js
+@@ -0,0 +1,122 @@
++const { onSchedule } = require("firebase-functions/v2/scheduler");
++const { logger } = require("firebase-functions");
++const admin = require("firebase-admin");
++const { createNotification } = require("./notifications");
++
++// How often this function runs — kept as a named constant since the
++// "due" window below (isDue's toleranceMinutes) is derived from it.
++const SCHEDULE = "every 15 minutes";
++
++/** "HH:mm" (24h) for `date` in the given IANA zone, e.g. "Africa/Lagos". */
++function hhmmInZone(date, timeZone) {
++  const parts = new Intl.DateTimeFormat("en-GB", {
++    timeZone,
++    hour: "2-digit",
++    minute: "2-digit",
++    hourCycle: "h23",
++  }).formatToParts(date);
++  const hour = parts.find((p) => p.type === "hour")?.value;
++  const minute = parts.find((p) => p.type === "minute")?.value;
++  return `${hour}:${minute}`;
++}
++
++/** "YYYY-MM-DD" for `date` in the given IANA zone — used as a per-day dedupe key. */
++function dateKeyInZone(date, timeZone) {
++  return new Intl.DateTimeFormat("en-CA", { timeZone }).format(date);
++}
++
++/**
++ * True if `nowHHmm` is within `toleranceMinutes` of `targetHHmm`, wrapping
++ * around midnight. Cloud Scheduler's actual fire time can drift a little
++ * from the nominal cron slot, and a user's chosen reminderTime won't
++ * generally land exactly on a 15-minute boundary anyway — a ~7 minute
++ * tolerance (half the schedule interval) means every reminderTime gets
++ * caught by exactly one run per day without double-firing.
++ */
++function isDue(nowHHmm, targetHHmm, toleranceMinutes = 7) {
++  const toMinutes = (hhmm) => {
++    const [h, m] = hhmm.split(":").map(Number);
++    return h * 60 + m;
++  };
++  const diff = Math.abs(toMinutes(nowHHmm) - toMinutes(targetHHmm));
++  return Math.min(diff, 1440 - diff) <= toleranceMinutes;
++}
++
++/**
++ * Runs on SCHEDULE and, for each user with reminders enabled whose local
++ * time currently matches their chosen reminderTime, sends exactly one push
++ * for the day — a "protect your streak" nudge if they logged study time
++ * yesterday but not yet today, otherwise the plain daily reminder.
++ *
++ * Requires `timezone` (IANA string, e.g. "Africa/Lagos") and `reminderTime`
++ * ("HH:mm") on users/{uid}; both are written client-side —
++ * see PushNotificationsService for timezone and
++ * setReminderSettings() in study_stats.dart for reminderTime.
++ * `lastReminderSentDate` is bookkeeping this function owns; nothing else
++ * should write to it.
++ */
++const sendDueReminders = onSchedule(SCHEDULE, async () => {
++  const db = admin.firestore();
++  const now = new Date();
++
++  const dueUsers = await db.collection("users").where("reminderEnabled", "==", true).get();
++
++  await Promise.all(
++    dueUsers.docs.map(async (userDoc) => {
++      const { timezone, reminderTime, lastReminderSentDate } = userDoc.data();
++      if (!timezone || !reminderTime) return;
++
++      let nowHHmm, todayKey;
++      try {
++        nowHHmm = hhmmInZone(now, timezone);
++        todayKey = dateKeyInZone(now, timezone);
++      } catch (err) {
++        logger.warn(`Invalid timezone "${timezone}" for user ${userDoc.id}`, err);
++        return;
++      }
++
++      if (lastReminderSentDate === todayKey) return; // already handled today
++      if (!isDue(nowHHmm, reminderTime)) return;
++
++      try {
++        const lastLogSnap = await userDoc.ref
++          .collection("studyLog")
++          .orderBy("loggedAt", "desc")
++          .limit(1)
++          .get();
++
++        const lastLoggedAt = lastLogSnap.docs[0]?.data()?.loggedAt?.toDate?.();
++        const lastLoggedKey = lastLoggedAt ? dateKeyInZone(lastLoggedAt, timezone) : null;
++
++        if (lastLoggedKey !== todayKey) {
++          const yesterdayKey = dateKeyInZone(
++            new Date(now.getTime() - 24 * 60 * 60 * 1000),
++            timezone,
++          );
++          const hasActiveStreak = lastLoggedKey === yesterdayKey;
++
++          if (hasActiveStreak) {
++            await createNotification(userDoc.id, {
++              type: "streak",
++              title: "🔥 Keep your streak alive",
++              body: "You haven't studied yet today — a few minutes now keeps your streak going.",
++            });
++          } else {
++            await createNotification(userDoc.id, {
++              type: "dailyReminder",
++              title: "Time to revise 📚",
++              body: "A few focused minutes now beats a cram session later.",
++            });
++          }
++        }
++        // else: already studied today — no nudge needed, just mark as handled below.
++
++        await userDoc.ref.set({ lastReminderSentDate: todayKey }, { merge: true });
++      } catch (err) {
++        logger.error(`Reminder check failed for user ${userDoc.id}`, err);
++      }
++    }),
++  );
++});
++
++module.exports = { sendDueReminders };
+diff --git a/lib/core/services/local_notifications_service.dart b/lib/core/services/local_notifications_service.dart
+deleted file mode 100644
+index 1a6ae7e..0000000
+--- a/lib/core/services/local_notifications_service.dart
++++ /dev/null
+@@ -1,98 +0,0 @@
+-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+-import 'package:flutter_timezone/flutter_timezone.dart';
+-import 'package:timezone/data/latest_all.dart' as tz_data;
+-import 'package:timezone/timezone.dart' as tz;
+-
+-/// Schedules/cancels the single recurring "daily study reminder" — the
+-/// 🟢 local-notification case from the planner's Study Reminders toggle.
+-/// This doesn't touch Firestore or FCM; it's pure on-device scheduling,
+-/// re-armed every time the user flips the toggle or picks a new time.
+-class LocalNotificationsService {
+-  LocalNotificationsService._();
+-  static final _plugin = FlutterLocalNotificationsPlugin();
+-  static bool _initialized = false;
+-
+-  static const _dailyReminderId = 1001;
+-
+-  static Future<void> init() async {
+-    if (_initialized) return;
+-    tz_data.initializeTimeZones();
+-
+-    // Without this, tz.local silently defaults to UTC — every
+-    // zonedSchedule() below would then be off by the device's real UTC
+-    // offset (e.g. an hour late in Lagos), which reads as "never fires"
+-    // for anyone testing with a short window.
+-    try {
+-      final deviceTimezone = await FlutterTimezone.getLocalTimezone();
+-      tz.setLocalLocation(tz.getLocation(deviceTimezone.identifier));
+-    } catch (_) {
+-      // Fall back to UTC rather than crash init — worst case the
+-      // reminder fires at the wrong hour instead of not at all.
+-    }
+-
+-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+-    const iosSettings = DarwinInitializationSettings(
+-      requestAlertPermission: false, // requested explicitly in main.dart
+-      requestBadgePermission: false,
+-      requestSoundPermission: false,
+-    );
+-    await _plugin.initialize(
+-      const InitializationSettings(android: androidSettings, iOS: iosSettings),
+-    );
+-
+-    const channel = AndroidNotificationChannel(
+-      'daily_reminder',
+-      'Study reminders',
+-      description: 'Your daily "time to revise" nudge',
+-      importance: Importance.defaultImportance,
+-    );
+-    await _plugin
+-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+-        ?.createNotificationChannel(channel);
+-
+-    _initialized = true;
+-  }
+-
+-  static Future<bool> requestPermission() async {
+-    final android = await _plugin
+-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+-        ?.requestNotificationsPermission();
+-    final ios = await _plugin
+-        .resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>()
+-        ?.requestPermissions(alert: true, badge: true, sound: true);
+-    return (android ?? true) && (ios ?? true);
+-  }
+-
+-  /// [time] is "HH:mm", 24-hour — matches UserStudySettings.reminderTime.
+-  static Future<void> scheduleDailyReminder(String time) async {
+-    await init();
+-    final parts = time.split(':');
+-    final hour = int.tryParse(parts.elementAt(0)) ?? 19;
+-    final minute = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+-
+-    final now = tz.TZDateTime.now(tz.local);
+-    var scheduled = tz.TZDateTime(tz.local, now.year, now.month, now.day, hour, minute);
+-    if (scheduled.isBefore(now)) {
+-      scheduled = scheduled.add(const Duration(days: 1));
+-    }
+-
+-    await _plugin.zonedSchedule(
+-      _dailyReminderId,
+-      'Time to revise 📚',
+-      'A few focused minutes now beats a cram session later.',
+-      scheduled,
+-      const NotificationDetails(
+-        android: AndroidNotificationDetails('daily_reminder', 'Study reminders'),
+-        iOS: DarwinNotificationDetails(),
+-      ),
+-      uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+-      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+-      matchDateTimeComponents: DateTimeComponents.time, // repeats daily at this time
+-    );
+-  }
+-
+-  static Future<void> cancelDailyReminder() async {
+-    await init();
+-    await _plugin.cancel(_dailyReminderId);
+-  }
+-}
+\ No newline at end of file
+diff --git a/lib/core/services/push_notifications_service.dart b/lib/core/services/push_notifications_service.dart
+index 170ba2e..456fd07 100644
+--- a/lib/core/services/push_notifications_service.dart
++++ b/lib/core/services/push_notifications_service.dart
+@@ -3,8 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
+ import 'package:firebase_messaging/firebase_messaging.dart';
+ import 'package:flutter/foundation.dart';
+ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+-
+-import 'local_notifications_service.dart';
++import 'package:flutter_timezone/flutter_timezone.dart';
+ 
+ /// Top-level (required by the plugin) background handler. Firestore is
+ /// where the source of truth lives — the notification doc was already
+@@ -14,9 +13,11 @@ import 'local_notifications_service.dart';
+ @pragma('vm:entry-point')
+ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {}
+ 
+-/// Registers the device's FCM token against the signed-in user's doc (so
+-/// Cloud Functions — see functions/src/notifications.js — can target a
+-/// push at them) and displays a local notification for messages that
++/// Registers the device's FCM token and IANA timezone against the signed-in
++/// user's doc (so Cloud Functions — see functions/src/notifications.js and
++/// functions/src/reminders.js — can target a push at them, including the
++/// daily/streak reminders, which need the timezone to know when "7pm" is
++/// for that user) and displays a local notification for messages that
+ /// arrive while the app is in the foreground, since FCM alone doesn't
+ /// surface a system-tray banner in that case on Android.
+ class PushNotificationsService {
+@@ -25,6 +26,32 @@ class PushNotificationsService {
+   static final _plugin = FlutterLocalNotificationsPlugin();
+ 
+   static Future<void> init() async {
++    // The plugin needs its own init + Android channel before _plugin.show()
++    // (used below for foreground banners) will do anything. This used to
++    // happen in local_notifications_service.dart, which is gone now that
++    // reminders are server-driven — see functions/src/reminders.js — but
++    // the plugin itself is still needed here to surface a system-tray
++    // banner for foreground FCM messages, which don't get one automatically
++    // on Android.
++    await _plugin.initialize(
++      const InitializationSettings(
++        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
++        iOS: DarwinInitializationSettings(
++          requestAlertPermission: false, // requested explicitly below
++          requestBadgePermission: false,
++          requestSoundPermission: false,
++        ),
++      ),
++    );
++    await _plugin
++        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
++        ?.createNotificationChannel(const AndroidNotificationChannel(
++          'daily_reminder',
++          'Study reminders',
++          description: 'Daily study nudges and streak reminders',
++          importance: Importance.defaultImportance,
++        ));
++
+     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+ 
+     await _messaging.requestPermission(alert: true, badge: true, sound: true);
+@@ -44,13 +71,29 @@ class PushNotificationsService {
+     if (uid == null) return;
+     try {
+       final token = await _messaging.getToken();
+-      if (token == null) return;
++      final timezone = await _localTimezone();
++      final update = <String, dynamic>{
++        if (token != null) 'fcmToken': token,
++        if (timezone != null) 'timezone': timezone,
++      };
++      if (update.isEmpty) return;
+       await FirebaseFirestore.instance
+           .collection('users')
+           .doc(uid)
+-          .set({'fcmToken': token}, SetOptions(merge: true));
++          .set(update, SetOptions(merge: true));
+     } catch (e) {
+-      debugPrint('FCM token save failed: $e');
++      debugPrint('FCM token/timezone save failed: $e');
++    }
++  }
++
++  /// IANA zone identifier, e.g. "Africa/Lagos". Best-effort: if it can't be
++  /// resolved, the daily/streak reminder just won't fire for this device
++  /// until a later app open succeeds, rather than blocking token save.
++  static Future<String?> _localTimezone() async {
++    try {
++      return (await FlutterTimezone.getLocalTimezone()).identifier;
++    } catch (_) {
++      return null;
+     }
+   }
+ 
+diff --git a/lib/features/notifications/models/app_notification.dart b/lib/features/notifications/models/app_notification.dart
+index 4d2e459..9aed2ea 100644
+--- a/lib/features/notifications/models/app_notification.dart
++++ b/lib/features/notifications/models/app_notification.dart
+@@ -11,6 +11,7 @@ enum NotificationType {
+   tutorReply,
+   streak,
+   subscription,
++  dailyReminder,
+   announcement,
+   generic,
+ }
+diff --git a/lib/features/notifications/notifications_screen.dart b/lib/features/notifications/notifications_screen.dart
+index c3b13aa..c299b9c 100644
+--- a/lib/features/notifications/notifications_screen.dart
++++ b/lib/features/notifications/notifications_screen.dart
+@@ -23,6 +23,8 @@ IconData _iconFor(NotificationType type) {
+       return Symbols.local_fire_department;
+     case NotificationType.subscription:
+       return Symbols.workspace_premium;
++    case NotificationType.dailyReminder:
++      return Symbols.alarm;
+     case NotificationType.announcement:
+       return Symbols.campaign;
+     case NotificationType.generic:
+@@ -46,6 +48,9 @@ class NotificationsScreen extends ConsumerWidget {
+       case NotificationType.subscription:
+         context.push('/subscription');
+         break;
++      case NotificationType.dailyReminder:
++        context.push('/planner');
++        break;
+       case NotificationType.streak:
+       case NotificationType.announcement:
+       case NotificationType.generic:
+diff --git a/lib/features/planner/study_planner_screen.dart b/lib/features/planner/study_planner_screen.dart
+index bfef01b..fce1f76 100644
+--- a/lib/features/planner/study_planner_screen.dart
++++ b/lib/features/planner/study_planner_screen.dart
+@@ -11,7 +11,6 @@ import '../../core/widgets/app_card.dart';
+ import '../../core/widgets/responsive_page.dart';
+ import '../../core/widgets/skeleton.dart';
+ import '../../core/utils/responsive.dart';
+-import '../../core/services/local_notifications_service.dart';
+ import '../home/models/study_stats.dart';
+ import 'models/study_task.dart';
+ 
+@@ -98,7 +97,6 @@ class _StudyPlannerScreenState extends ConsumerState<StudyPlannerScreen> {
+       final formatted =
+           '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
+       await setReminderSettings(uid, enabled: true, time: formatted);
+-      await LocalNotificationsService.scheduleDailyReminder(formatted);
+     }
+   }
+ 
+@@ -369,12 +367,11 @@ class _StudyPlannerScreenState extends ConsumerState<StudyPlannerScreen> {
+                   ),
+                   const SizedBox(height: AppSpacing.md),
+ 
+-                  // Study Reminders — Firestore-backed toggle/time, and a
+-                  // local notification (LocalNotificationsService) armed
+-                  // for that time on-device. Rescheduled here on every
+-                  // toggle/time change; re-armed on app start in main.dart
+-                  // is NOT done today, so a fresh install won't get the
+-                  // reminder back until the user re-opens this screen.
++                  // Study Reminders — Firestore-backed toggle/time only.
++                  // Delivery is server-side now: functions/src/reminders.js
++                  // runs every 15 min and pushes via FCM to whoever is due,
++                  // using the timezone PushNotificationsService saves on
++                  // sign-in. No on-device scheduling or re-arming needed.
+                   Text('Study Reminders', style: AppTextStyles.headlineMd()),
+                   const SizedBox(height: AppSpacing.sm),
+                   AppCard(
+@@ -403,16 +400,7 @@ class _StudyPlannerScreenState extends ConsumerState<StudyPlannerScreen> {
+                           value: settings.reminderEnabled,
+                           onChanged: uid == null
+                               ? null
+-                              : (v) async {
+-                                  await setReminderSettings(uid, enabled: v, time: settings.reminderTime);
+-                                  if (v) {
+-                                    await LocalNotificationsService.requestPermission();
+-                                    await LocalNotificationsService.scheduleDailyReminder(
+-                                        settings.reminderTime);
+-                                  } else {
+-                                    await LocalNotificationsService.cancelDailyReminder();
+-                                  }
+-                                },
++                              : (v) => setReminderSettings(uid, enabled: v, time: settings.reminderTime),
+                         ),
+                       ],
+                     ),
+diff --git a/lib/main.dart b/lib/main.dart
+index 47cf90d..86a4729 100644
+--- a/lib/main.dart
++++ b/lib/main.dart
+@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
+ 
+ import 'core/router/app_router.dart';
+ import 'core/theme/app_theme.dart';
+-import 'core/services/local_notifications_service.dart';
+ import 'core/services/push_notifications_service.dart';
+ 
+ Future<void> main() async {
+@@ -16,7 +15,6 @@ Future<void> main() async {
+   // firebase_options.dart for this project.
+   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+ 
+-  await LocalNotificationsService.init();
+   await PushNotificationsService.init();
+ 
+   runApp(const ProviderScope(child: NursaFlowApp()));
