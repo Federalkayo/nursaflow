@@ -88,16 +88,16 @@ flutter:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/images/logo.png"
+  image_path: "assets/images/logo2.png"
   min_sdk_android: 21
   # Adaptive icons (Android 8+): foreground is your logo, background is a
   # solid color behind it — this sidesteps the transparent/invisible-logo
   # problem entirely, since the OS composites the two layers itself.
   adaptive_icon_background: "#00535B"
-  adaptive_icon_foreground: "assets/images/logo.png"
+  adaptive_icon_foreground: "assets/images/logo2.png"
   web:
     generate: true
-    image_path: "assets/images/logo.png"
+    image_path: "assets/images/logo2.png"
     background_color: "#00535B"
     theme_color: "#00535B"
 
