@@ -11,7 +11,6 @@ import '../../core/widgets/app_card.dart';
 import '../../core/widgets/responsive_page.dart';
 import '../../core/widgets/skeleton.dart';
 import '../../core/utils/responsive.dart';
-import '../../core/services/local_notifications_service.dart';
 import '../home/models/study_stats.dart';
 import 'models/study_task.dart';
 
@@ -98,7 +97,6 @@ class _StudyPlannerScreenState extends ConsumerState<StudyPlannerScreen> {
       final formatted =
           '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
       await setReminderSettings(uid, enabled: true, time: formatted);
-      await LocalNotificationsService.scheduleDailyReminder(formatted);
     }
   }
 
@@ -369,12 +367,11 @@ class _StudyPlannerScreenState extends ConsumerState<StudyPlannerScreen> {
                   ),
                   const SizedBox(height: AppSpacing.md),
 
-                  // Study Reminders — Firestore-backed toggle/time, and a
-                  // local notification (LocalNotificationsService) armed
-                  // for that time on-device. Rescheduled here on every
-                  // toggle/time change; re-armed on app start in main.dart
-                  // is NOT done today, so a fresh install won't get the
-                  // reminder back until the user re-opens this screen.
+                  // Study Reminders — Firestore-backed toggle/time only.
+                  // Delivery is server-side now: functions/src/reminders.js
+                  // runs every 15 min and pushes via FCM to whoever is due,
+                  // using the timezone PushNotificationsService saves on
+                  // sign-in. No on-device scheduling or re-arming needed.
                   Text('Study Reminders', style: AppTextStyles.headlineMd()),
                   const SizedBox(height: AppSpacing.sm),
                   AppCard(
@@ -403,16 +400,7 @@ class _StudyPlannerScreenState extends ConsumerState<StudyPlannerScreen> {
                           value: settings.reminderEnabled,
                           onChanged: uid == null
                               ? null
-                              : (v) async {
-                                  await setReminderSettings(uid, enabled: v, time: settings.reminderTime);
-                                  if (v) {
-                                    await LocalNotificationsService.requestPermission();
-                                    await LocalNotificationsService.scheduleDailyReminder(
-                                        settings.reminderTime);
-                                  } else {
-                                    await LocalNotificationsService.cancelDailyReminder();
-                                  }
-                                },
+                              : (v) => setReminderSettings(uid, enabled: v, time: settings.reminderTime),
                         ),
                       ],
                     ),

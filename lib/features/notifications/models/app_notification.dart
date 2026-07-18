@@ -11,6 +11,7 @@ enum NotificationType {
   tutorReply,
   streak,
   subscription,
+  dailyReminder,
   announcement,
   generic,
 }

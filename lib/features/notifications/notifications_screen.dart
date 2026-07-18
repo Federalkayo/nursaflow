@@ -23,6 +23,8 @@ IconData _iconFor(NotificationType type) {
       return Symbols.local_fire_department;
     case NotificationType.subscription:
       return Symbols.workspace_premium;
+    case NotificationType.dailyReminder:
+      return Symbols.alarm;
     case NotificationType.announcement:
       return Symbols.campaign;
     case NotificationType.generic:
@@ -45,6 +47,9 @@ class NotificationsScreen extends ConsumerWidget {
         break;
       case NotificationType.subscription:
         context.push('/subscription');
+        break;
+      case NotificationType.dailyReminder:
+        context.go('/planner');
         break;
       case NotificationType.streak:
       case NotificationType.announcement:

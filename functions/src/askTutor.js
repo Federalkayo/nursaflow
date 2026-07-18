@@ -179,6 +179,12 @@ const askTutor = onCall(
       timestamp: admin.firestore.FieldValue.serverTimestamp(),
     });
 
+    // Not calling notifyTutorReplyReady() here on purpose: this function is
+    // synchronous, so the reply written above already reached the client in
+    // this same request/response — a push notification for it would just be
+    // a duplicate. See the STUB comment on notifyTutorReplyReady in
+    // functions/src/notifications.js for when to wire it in.
+
     return { success: true };
   }
 );

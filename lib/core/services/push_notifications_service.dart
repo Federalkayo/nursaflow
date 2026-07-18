@@ -3,8 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-
-import 'local_notifications_service.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
 
 /// Top-level (required by the plugin) background handler. Firestore is
 /// where the source of truth lives — the notification doc was already
@@ -14,9 +13,11 @@ import 'local_notifications_service.dart';
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {}
 
-/// Registers the device's FCM token against the signed-in user's doc (so
-/// Cloud Functions — see functions/src/notifications.js — can target a
-/// push at them) and displays a local notification for messages that
+/// Registers the device's FCM token and IANA timezone against the signed-in
+/// user's doc (so Cloud Functions — see functions/src/notifications.js and
+/// functions/src/reminders.js — can target a push at them, including the
+/// daily/streak reminders, which need the timezone to know when "7pm" is
+/// for that user) and displays a local notification for messages that
 /// arrive while the app is in the foreground, since FCM alone doesn't
 /// surface a system-tray banner in that case on Android.
 class PushNotificationsService {
@@ -25,6 +26,32 @@ class PushNotificationsService {
   static final _plugin = FlutterLocalNotificationsPlugin();
 
   static Future<void> init() async {
+    // The plugin needs its own init + Android channel before _plugin.show()
+    // (used below for foreground banners) will do anything. This used to
+    // happen in local_notifications_service.dart, which is gone now that
+    // reminders are server-driven — see functions/src/reminders.js — but
+    // the plugin itself is still needed here to surface a system-tray
+    // banner for foreground FCM messages, which don't get one automatically
+    // on Android.
+    await _plugin.initialize(
+      const InitializationSettings(
+        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+        iOS: DarwinInitializationSettings(
+          requestAlertPermission: false, // requested explicitly below
+          requestBadgePermission: false,
+          requestSoundPermission: false,
+        ),
+      ),
+    );
+    await _plugin
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(const AndroidNotificationChannel(
+          'daily_reminder',
+          'Study reminders',
+          description: 'Daily study nudges and streak reminders',
+          importance: Importance.defaultImportance,
+        ));
+
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
     await _messaging.requestPermission(alert: true, badge: true, sound: true);
@@ -44,13 +71,29 @@ class PushNotificationsService {
     if (uid == null) return;
     try {
       final token = await _messaging.getToken();
-      if (token == null) return;
+      final timezone = await _localTimezone();
+      final update = <String, dynamic>{
+        if (token != null) 'fcmToken': token,
+        if (timezone != null) 'timezone': timezone,
+      };
+      if (update.isEmpty) return;
       await FirebaseFirestore.instance
           .collection('users')
           .doc(uid)
-          .set({'fcmToken': token}, SetOptions(merge: true));
+          .set(update, SetOptions(merge: true));
     } catch (e) {
-      debugPrint('FCM token save failed: $e');
+      debugPrint('FCM token/timezone save failed: $e');
+    }
+  }
+
+  /// IANA zone identifier, e.g. "Africa/Lagos". Best-effort: if it can't be
+  /// resolved, the daily/streak reminder just won't fire for this device
+  /// until a later app open succeeds, rather than blocking token save.
+  static Future<String?> _localTimezone() async {
+    try {
+      return (await FlutterTimezone.getLocalTimezone()).identifier;
+    } catch (_) {
+      return null;
     }
   }
 
