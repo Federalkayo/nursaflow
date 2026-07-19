@@ -59,10 +59,8 @@ async function notifyTutorReplyReady(userId, { documentId } = {}) {
 }
 
 /**
- * STUB — not called from anywhere yet. Call this from the Paystack webhook
- * once it's implemented (see functions/src/paystackWebhook.js).
- * `status` should be short and human-readable, e.g. "activated", "renewed",
- * "payment failed".
+ * Called from paystackWebhook.js on a successful charge — see that file for
+ * the "status"/"planName" values it passes.
  */
 async function notifyPaymentUpdate(userId, { status, planName } = {}) {
   return createNotification(userId, {

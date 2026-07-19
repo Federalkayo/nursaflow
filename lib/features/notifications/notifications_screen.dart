@@ -49,6 +49,11 @@ class NotificationsScreen extends ConsumerWidget {
         context.push('/subscription');
         break;
       case NotificationType.dailyReminder:
+        // /planner lives inside the StatefulShellRoute (no parentNavigatorKey
+        // in app_router.dart), while this screen is pushed on the root
+        // navigator — push() here collides with the shell's own page key
+        // and crashes with a GlobalKey assertion. go() is correct for
+        // jumping back into a shell tab from a modal route.
         context.go('/planner');
         break;
       case NotificationType.streak:

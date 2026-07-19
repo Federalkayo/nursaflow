@@ -1,6 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
@@ -30,8 +36,8 @@ class PlanCatalog {
     'Offline flashcard review',
   ];
 
-  static const monthlyPrice = 2500; // NGN
-  static const annualPrice = 20000; // NGN (≈ 2 months free vs monthly)
+  static const monthlyPrice = 2000; // NGN
+  static const annualPrice = 16000; // NGN (33% off vs paying monthly × 12)
 }
 
 class SubscriptionScreen extends StatefulWidget {
@@ -42,22 +48,50 @@ class SubscriptionScreen extends StatefulWidget {
 }
 
 class _SubscriptionScreenState extends State<SubscriptionScreen> {
-  BillingCycle _cycle = BillingCycle.annual;
+  BillingCycle _cycle = BillingCycle.monthly;
   bool _isProcessing = false;
 
   Future<void> _upgrade() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
     setState(() => _isProcessing = true);
-    // TODO: call the `paystack-initialize` Edge/Cloud Function with the
-    // selected plan + billing cycle, then launch the returned authorization_url
-    // (e.g. via url_launcher or an in-app WebView). On successful webhook
-    // confirmation, the backend flips `users/{uid}.subscription.status` to
-    // 'active' and the app should react to that via a Firestore stream.
-    await Future.delayed(const Duration(milliseconds: 900));
-    if (!mounted) return;
-    setState(() => _isProcessing = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Paystack checkout would open here.')),
-    );
+    try {
+      final callable = FirebaseFunctions.instance.httpsCallable('initializePaystackTransaction');
+      final result = await callable.call<Map<String, dynamic>>({
+        'cycle': _cycle == BillingCycle.monthly ? 'monthly' : 'annual',
+      });
+      final authorizationUrl = result.data['authorizationUrl'] as String?;
+      if (authorizationUrl == null) {
+        throw Exception('No checkout URL returned');
+      }
+
+      if (!mounted) return;
+      setState(() => _isProcessing = false);
+
+      final success = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
+          builder: (_) => _PaystackCheckoutPage(url: authorizationUrl, uid: uid),
+        ),
+      );
+
+      if (!mounted || success != true) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Payment successful — Premium is now active!')),
+      );
+    } on FirebaseFunctionsException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message ?? 'Checkout failed. Please try again.')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Checkout failed. Please try again.')),
+      );
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
+    }
   }
 
   @override
@@ -133,43 +167,72 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                 LayoutBuilder(
                   builder: (context, constraints) {
                     final isWide = constraints.maxWidth > 640;
-                    const free = _PlanCard(
-                      title: 'Free',
-                      price: '₦0',
-                      period: 'forever',
-                      features: PlanCatalog.freeFeatures,
-                      isPrimary: false,
-                      ctaLabel: 'Current Plan',
-                      onTap: null,
-                    );
-                    final premium = _PlanCard(
-                      title: 'Premium',
-                      price: '₦${_formatNaira(price)}',
-                      period: '/month${_cycle == BillingCycle.annual ? ', billed yearly' : ''}',
-                      features: PlanCatalog.premiumFeatures,
-                      isPrimary: true,
-                      ctaLabel: 'Upgrade to Premium',
-                      isLoading: _isProcessing,
-                      onTap: _upgrade,
-                      badge: _cycle == BillingCycle.annual ? 'BEST VALUE' : null,
-                    );
+                    final uid = FirebaseAuth.instance.currentUser?.uid;
 
-                    if (isWide) {
-                      return Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Expanded(child: free),
-                          const SizedBox(width: AppSpacing.md),
-                          Expanded(child: premium),
-                        ],
-                      );
-                    }
-                    return Column(
-                      children: [
-                        premium,
-                        const SizedBox(height: AppSpacing.md),
-                        free,
-                      ],
+                    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                      stream: uid == null
+                          ? null
+                          : FirebaseFirestore.instance.collection('users').doc(uid).snapshots(),
+                      builder: (context, snapshot) {
+                        final sub = snapshot.data?.data()?['subscription'] as Map<String, dynamic>?;
+                        final renewsAt = (sub?['renewsAt'] as Timestamp?)?.toDate();
+                        final isActive = sub?['status'] == 'active' &&
+                            renewsAt != null &&
+                            renewsAt.isAfter(DateTime.now());
+                        final activePlan = sub?['plan'] as String?; // 'monthly' | 'annual'
+
+                        final free = _PlanCard(
+                          title: 'Free',
+                          price: '₦0',
+                          period: 'forever',
+                          features: PlanCatalog.freeFeatures,
+                          isPrimary: false,
+                          ctaLabel: isActive ? 'Included in Premium' : 'Current Plan',
+                          onTap: null,
+                        );
+                        final premium = _PlanCard(
+                          title: 'Premium',
+                          price: '₦${_formatNaira(price)}',
+                          period:
+                              '/month${_cycle == BillingCycle.annual ? ', billed yearly' : ''}',
+                          subCaption: _cycle == BillingCycle.annual
+                              ? '₦${_formatNaira(PlanCatalog.annualPrice)} charged once a year'
+                              : null,
+                          features: PlanCatalog.premiumFeatures,
+                          isPrimary: true,
+                          ctaLabel: isActive
+                              ? (activePlan == (_cycle == BillingCycle.monthly ? 'monthly' : 'annual')
+                                  ? 'Current Plan'
+                                  : 'Switch to this plan')
+                              : 'Upgrade to Premium',
+                          isLoading: _isProcessing,
+                          onTap: isActive &&
+                                  activePlan == (_cycle == BillingCycle.monthly ? 'monthly' : 'annual')
+                              ? null
+                              : _upgrade,
+                          badge: isActive
+                              ? 'ACTIVE'
+                              : (_cycle == BillingCycle.annual ? 'BEST VALUE' : null),
+                        );
+
+                        if (isWide) {
+                          return Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(child: free),
+                              const SizedBox(width: AppSpacing.md),
+                              Expanded(child: premium),
+                            ],
+                          );
+                        }
+                        return Column(
+                          children: [
+                            premium,
+                            const SizedBox(height: AppSpacing.md),
+                            free,
+                          ],
+                        );
+                      },
                     );
                   },
                 ),
@@ -250,6 +313,7 @@ class _PlanCard extends StatelessWidget {
     required this.onTap,
     this.isLoading = false,
     this.badge,
+    this.subCaption,
   });
 
   final String title;
@@ -261,6 +325,11 @@ class _PlanCard extends StatelessWidget {
   final VoidCallback? onTap;
   final bool isLoading;
   final String? badge;
+  // Shown directly under the price — used to spell out the total amount
+  // actually charged (e.g. "₦16,000 billed once a year") next to the
+  // per-month figure above, so the per-month number can't be mistaken for
+  // what gets charged today.
+  final String? subCaption;
 
   @override
   Widget build(BuildContext context) {
@@ -303,6 +372,13 @@ class _PlanCard extends StatelessWidget {
                       color: isPrimary ? Colors.white70 : AppColors.onSurfaceVariant)),
             ],
           ),
+          if (subCaption != null) ...[
+            const SizedBox(height: 2),
+            Text(subCaption!,
+                style: AppTextStyles.bodySm(
+                        color: isPrimary ? Colors.white70 : AppColors.onSurfaceVariant)
+                    .copyWith(fontWeight: FontWeight.bold)),
+          ],
           const SizedBox(height: AppSpacing.md),
           for (final f in features)
             Padding(
@@ -367,6 +443,67 @@ class _FaqTile extends StatelessWidget {
         expandedAlignment: Alignment.centerLeft,
         children: [Text(answer, style: AppTextStyles.bodyMd())],
       ),
+    );
+  }
+}
+
+/// Hosts the Paystack checkout page in a WebView and watches Firestore for
+/// the webhook (functions/src/paystackWebhook.js) to flip
+/// `subscription.status` to 'active' — rather than trying to parse
+/// Paystack's post-payment redirect URL, which would need a hosted
+/// callback page this app doesn't have. Pops with `true` on success so the
+/// caller can show a confirmation snackbar.
+class _PaystackCheckoutPage extends StatefulWidget {
+  const _PaystackCheckoutPage({required this.url, required this.uid});
+  final String url;
+  final String uid;
+
+  @override
+  State<_PaystackCheckoutPage> createState() => _PaystackCheckoutPageState();
+}
+
+class _PaystackCheckoutPageState extends State<_PaystackCheckoutPage> {
+  late final WebViewController _controller;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _sub;
+  bool _closed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..loadRequest(Uri.parse(widget.url));
+
+    _sub = FirebaseFirestore.instance
+        .collection('users')
+        .doc(widget.uid)
+        .snapshots()
+        .listen((doc) {
+      final status = doc.data()?['subscription']?['status'];
+      if (status == 'active' && !_closed && mounted) {
+        _closed = true;
+        Navigator.of(context).pop(true);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Complete payment'),
+        leading: IconButton(
+          icon: const Icon(Symbols.close),
+          onPressed: () => Navigator.of(context).pop(false),
+        ),
+      ),
+      body: WebViewWidget(controller: _controller),
     );
   }
 }

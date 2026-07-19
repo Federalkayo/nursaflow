@@ -2,60 +2,30 @@ const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { logger } = require("firebase-functions");
 const admin = require("firebase-admin");
 const { createNotification } = require("./notifications");
+const { sendEmail, dailyReminderEmailHtml, resendApiKey } = require("./email");
+const { hhmmInZone, dateKeyInZone, isDue } = require("./timeUtils");
 
 // How often this function runs — kept as a named constant since the
 // "due" window below (isDue's toleranceMinutes) is derived from it.
 const SCHEDULE = "every 15 minutes";
 
-/** "HH:mm" (24h) for `date` in the given IANA zone, e.g. "Africa/Lagos". */
-function hhmmInZone(date, timeZone) {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone,
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(date);
-  const hour = parts.find((p) => p.type === "hour")?.value;
-  const minute = parts.find((p) => p.type === "minute")?.value;
-  return `${hour}:${minute}`;
-}
-
-/** "YYYY-MM-DD" for `date` in the given IANA zone — used as a per-day dedupe key. */
-function dateKeyInZone(date, timeZone) {
-  return new Intl.DateTimeFormat("en-CA", { timeZone }).format(date);
-}
-
-/**
- * True if `nowHHmm` is within `toleranceMinutes` of `targetHHmm`, wrapping
- * around midnight. Cloud Scheduler's actual fire time can drift a little
- * from the nominal cron slot, and a user's chosen reminderTime won't
- * generally land exactly on a 15-minute boundary anyway — a ~7 minute
- * tolerance (half the schedule interval) means every reminderTime gets
- * caught by exactly one run per day without double-firing.
- */
-function isDue(nowHHmm, targetHHmm, toleranceMinutes = 7) {
-  const toMinutes = (hhmm) => {
-    const [h, m] = hhmm.split(":").map(Number);
-    return h * 60 + m;
-  };
-  const diff = Math.abs(toMinutes(nowHHmm) - toMinutes(targetHHmm));
-  return Math.min(diff, 1440 - diff) <= toleranceMinutes;
-}
-
 /**
  * Runs on SCHEDULE and, for each user with reminders enabled whose local
  * time currently matches their chosen reminderTime, sends exactly one push
- * for the day — a "protect your streak" nudge if they logged study time
- * yesterday but not yet today, otherwise the plain daily reminder.
+ * (and, unless they've opted out, one email) for the day — a "protect your
+ * streak" nudge if they logged study time yesterday but not yet today,
+ * otherwise the plain daily reminder.
  *
  * Requires `timezone` (IANA string, e.g. "Africa/Lagos") and `reminderTime`
  * ("HH:mm") on users/{uid}; both are written client-side —
  * see PushNotificationsService for timezone and
  * setReminderSettings() in study_stats.dart for reminderTime.
  * `lastReminderSentDate` is bookkeeping this function owns; nothing else
- * should write to it.
+ * should write to it. Email delivery additionally requires `email` (already
+ * saved at signup) and respects `emailNotificationsEnabled` (default true —
+ * see the "Also email me" toggle in study_planner_screen.dart).
  */
-const sendDueReminders = onSchedule(SCHEDULE, async () => {
+const sendDueReminders = onSchedule({ schedule: SCHEDULE, secrets: [resendApiKey] }, async () => {
   const db = admin.firestore();
   const now = new Date();
 
@@ -63,7 +33,8 @@ const sendDueReminders = onSchedule(SCHEDULE, async () => {
 
   await Promise.all(
     dueUsers.docs.map(async (userDoc) => {
-      const { timezone, reminderTime, lastReminderSentDate } = userDoc.data();
+      const userData = userDoc.data();
+      const { timezone, reminderTime, lastReminderSentDate } = userData;
       if (!timezone || !reminderTime) return;
 
       let nowHHmm, todayKey;
@@ -94,19 +65,30 @@ const sendDueReminders = onSchedule(SCHEDULE, async () => {
             timezone,
           );
           const hasActiveStreak = lastLoggedKey === yesterdayKey;
+          const kind = hasActiveStreak ? "streak" : "dailyReminder";
 
-          if (hasActiveStreak) {
-            await createNotification(userDoc.id, {
-              type: "streak",
-              title: "🔥 Keep your streak alive",
-              body: "You haven't studied yet today — a few minutes now keeps your streak going.",
-            });
-          } else {
-            await createNotification(userDoc.id, {
-              type: "dailyReminder",
-              title: "Time to revise 📚",
-              body: "A few focused minutes now beats a cram session later.",
-            });
+          const title = hasActiveStreak
+            ? "🔥 Keep your streak alive"
+            : "Time to revise 📚";
+          const body = hasActiveStreak
+            ? "You haven't studied yet today — a few minutes now keeps your streak going."
+            : "A few focused minutes now beats a cram session later.";
+
+          await createNotification(userDoc.id, { type: kind, title, body });
+
+          if (userData.emailNotificationsEnabled !== false && userData.email) {
+            try {
+              await sendEmail({
+                to: userData.email,
+                subject: title,
+                html: dailyReminderEmailHtml({ name: userData.name, kind }),
+              });
+            } catch (err) {
+              // Same principle as the push send in createNotification: an
+              // email failure shouldn't stop the push above from having
+              // already gone out, or block marking the day as handled.
+              logger.warn(`Reminder email failed for user ${userDoc.id}`, err);
+            }
           }
         }
         // else: already studied today — no nudge needed, just mark as handled below.

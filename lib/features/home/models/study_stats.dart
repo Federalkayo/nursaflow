@@ -60,12 +60,14 @@ class UserStudySettings {
     this.weeklyGoalHours = 10,
     this.reminderEnabled = false,
     this.reminderTime = '19:00',
+    this.emailNotificationsEnabled = true,
     this.lastReadDocumentId,
   });
 
   final double weeklyGoalHours;
   final bool reminderEnabled;
   final String reminderTime; // "HH:mm", 24-hour
+  final bool emailNotificationsEnabled; // opt-out — see functions/src/reminders.js and weeklyReport.js
   final String? lastReadDocumentId;
 
   factory UserStudySettings.fromFirestore(DocumentSnapshot doc) {
@@ -74,6 +76,7 @@ class UserStudySettings {
       weeklyGoalHours: (data['weeklyGoalHours'] as num?)?.toDouble() ?? 10,
       reminderEnabled: data['reminderEnabled'] as bool? ?? false,
       reminderTime: data['reminderTime'] as String? ?? '19:00',
+      emailNotificationsEnabled: data['emailNotificationsEnabled'] as bool? ?? true,
       lastReadDocumentId: data['lastReadDocumentId'] as String?,
     );
   }
@@ -107,6 +110,13 @@ Future<void> setReminderSettings(String uid, {required bool enabled, required St
       .collection('users')
       .doc(uid)
       .set({'reminderEnabled': enabled, 'reminderTime': time}, SetOptions(merge: true));
+}
+
+Future<void> setEmailNotificationsEnabled(String uid, bool enabled) {
+  return FirebaseFirestore.instance
+      .collection('users')
+      .doc(uid)
+      .set({'emailNotificationsEnabled': enabled}, SetOptions(merge: true));
 }
 
 Future<void> setLastReadDocument(String uid, String documentId) {

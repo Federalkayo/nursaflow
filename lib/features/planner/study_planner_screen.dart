@@ -369,39 +369,69 @@ class _StudyPlannerScreenState extends ConsumerState<StudyPlannerScreen> {
 
                   // Study Reminders — Firestore-backed toggle/time only.
                   // Delivery is server-side now: functions/src/reminders.js
-                  // runs every 15 min and pushes via FCM to whoever is due,
-                  // using the timezone PushNotificationsService saves on
-                  // sign-in. No on-device scheduling or re-arming needed.
+                  // runs every 15 min and pushes via FCM (and, unless opted
+                  // out below, email) to whoever is due, using the timezone
+                  // PushNotificationsService saves on sign-in. No on-device
+                  // scheduling or re-arming needed.
                   Text('Study Reminders', style: AppTextStyles.headlineMd()),
                   const SizedBox(height: AppSpacing.sm),
                   AppCard(
-                    child: Row(
+                    child: Column(
                       children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Daily reminder', style: AppTextStyles.labelLg()),
+                                  Text(
+                                    settings.reminderEnabled
+                                        ? 'Reminds you at ${settings.reminderTime}'
+                                        : 'Off',
+                                    style: AppTextStyles.bodySm(),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (settings.reminderEnabled && uid != null)
+                              TextButton(
+                                onPressed: () => _pickReminderTime(context, uid, settings.reminderTime),
+                                child: Text(settings.reminderTime),
+                              ),
+                            Switch(
+                              value: settings.reminderEnabled,
+                              onChanged: uid == null
+                                  ? null
+                                  : (v) => setReminderSettings(uid, enabled: v, time: settings.reminderTime),
+                            ),
+                          ],
+                        ),
+                        if (settings.reminderEnabled) ...[
+                          const Divider(height: 1),
+                          Row(
                             children: [
-                              Text('Daily reminder', style: AppTextStyles.labelLg()),
-                              Text(
-                                settings.reminderEnabled
-                                    ? 'Reminds you at ${settings.reminderTime}'
-                                    : 'Off',
-                                style: AppTextStyles.bodySm(),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Also email me', style: AppTextStyles.labelLg()),
+                                    Text(
+                                      'Reminder/streak emails, plus your weekly progress report',
+                                      style: AppTextStyles.bodySm(),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Switch(
+                                value: settings.emailNotificationsEnabled,
+                                onChanged: uid == null
+                                    ? null
+                                    : (v) => setEmailNotificationsEnabled(uid, v),
                               ),
                             ],
                           ),
-                        ),
-                        if (settings.reminderEnabled && uid != null)
-                          TextButton(
-                            onPressed: () => _pickReminderTime(context, uid, settings.reminderTime),
-                            child: Text(settings.reminderTime),
-                          ),
-                        Switch(
-                          value: settings.reminderEnabled,
-                          onChanged: uid == null
-                              ? null
-                              : (v) => setReminderSettings(uid, enabled: v, time: settings.reminderTime),
-                        ),
+                        ],
                       ],
                     ),
                   ),

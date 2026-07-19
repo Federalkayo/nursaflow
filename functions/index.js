@@ -5,11 +5,16 @@ const { analyzeDocument } = require("./src/analyzeDocument");
 const { askTutor } = require("./src/askTutor");
 const { fetchResources } = require("./src/resources");
 const { sendDueReminders } = require("./src/reminders");
+const { sendWeeklyReports } = require("./src/weeklyReport");
+const { onUserCreated } = require("./src/onUserCreated");
+const { initializePaystackTransaction } = require("./src/paystack");
+const { paystackWebhook } = require("./src/paystackWebhook");
 
 exports.analyzeDocument = analyzeDocument;
 exports.askTutor = askTutor;
 exports.fetchResources = fetchResources;
 exports.sendDueReminders = sendDueReminders;
-
-// functions/src/paystackWebhook.js is intentionally NOT exported here yet —
-// see that file's header for what's required before it's safe to deploy.
+exports.sendWeeklyReports = sendWeeklyReports;
+exports.onUserCreated = onUserCreated;
+exports.initializePaystackTransaction = initializePaystackTransaction;
+exports.paystackWebhook = paystackWebhook;
