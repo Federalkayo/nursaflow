@@ -82,6 +82,7 @@ const sendDueReminders = onSchedule({ schedule: SCHEDULE, secrets: [resendApiKey
                 to: userData.email,
                 subject: title,
                 html: dailyReminderEmailHtml({ name: userData.name, kind }),
+                category: "reminder",
               });
             } catch (err) {
               // Same principle as the push send in createNotification: an

@@ -100,3 +100,54 @@ Future<void> addExamDate(String uid, {required String course, required DateTime 
       .collection('planner')
       .add(task.toFirestore());
 }
+
+/// Creates a new regular study task in Firestore.
+Future<void> addStudyTask(
+  String uid, {
+  required String title,
+  required String subtitle,
+  required DateTime dueDate,
+}) {
+  final task = StudyTask(
+    id: '',
+    title: title,
+    subtitle: subtitle,
+    dueDate: dueDate,
+    isExam: false,
+  );
+  return FirebaseFirestore.instance
+      .collection('users')
+      .doc(uid)
+      .collection('planner')
+      .add(task.toFirestore());
+}
+
+/// Deletes a planner entry (task or exam) by id.
+Future<void> deletePlannerEntry(String uid, String taskId) {
+  return FirebaseFirestore.instance
+      .collection('users')
+      .doc(uid)
+      .collection('planner')
+      .doc(taskId)
+      .delete();
+}
+
+/// Updates an existing regular study task's fields.
+Future<void> updateStudyTask(
+  String uid,
+  String taskId, {
+  required String title,
+  required String subtitle,
+  required DateTime dueDate,
+}) {
+  return FirebaseFirestore.instance
+      .collection('users')
+      .doc(uid)
+      .collection('planner')
+      .doc(taskId)
+      .update({
+    'title': title,
+    'subtitle': subtitle,
+    'dueDate': Timestamp.fromDate(dueDate),
+  });
+}

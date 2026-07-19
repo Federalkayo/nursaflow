@@ -3,34 +3,39 @@ const { defineSecret } = require("firebase-functions/params");
 // Set with: firebase functions:secrets:set RESEND_API_KEY
 const resendApiKey = defineSecret("RESEND_API_KEY");
 
-// TODO: replace with your actual verified sending domain in the Resend
-// dashboard (Domains → Add Domain → add the DNS records it gives you).
-// Sends will fail with a 403 from Resend until this is a real, verified
-// domain — "resend.dev" test addresses only deliver to your own account.
+// TODO: once you verify a real sending domain in Resend (Domains → Add
+// Domain), swap "onboarding@resend.dev" in each of these for your real
+// addresses, e.g. "notifications@yourdomain.com" — any local part works
+// automatically once the domain itself is verified, no per-address setup.
+// Until the domain's verified, onboarding@resend.dev works with zero setup
+// but can only deliver to the email on your own Resend account.
 const FROM_ADDRESSES = {
-  welcome: "NursaFlow <onboarding@resend.dev>",   // → welcome@yourdomain.com
-  receipt: "NursaFlow Billing <onboarding@resend.dev>", // → receipts@yourdomain.com
-  reminder: "NursaFlow <onboarding@resend.dev>",  // → reminders@yourdomain.com
-  report: "NursaFlow <onboarding@resend.dev>",    // → reminders@yourdomain.com (or its own)
-  account: "NursaFlow <onboarding@resend.dev>",   // → no-reply@yourdomain.com
+  welcome: "NursaFlow <onboarding@resend.dev>",
+  receipt: "NursaFlow Billing <onboarding@resend.dev>",
+  reminder: "NursaFlow <onboarding@resend.dev>",
+  report: "NursaFlow <onboarding@resend.dev>",
+  account: "NursaFlow <onboarding@resend.dev>",
 };
 
 const ACCENT = "#0F766E"; // matches the teal used for primary buttons in-app
 
 /**
- * Every function that calls sendEmail() must declare
- * `secrets: [resendApiKey]` in its onCall/onSchedule/onDocumentCreated
- * options, or resendApiKey.value() below throws at runtime — 2nd-gen
- * Cloud Functions only inject a secret into the functions that ask for it.
+ * `category` picks the sender from FROM_ADDRESSES above — pass one of
+ * "welcome" | "receipt" | "reminder" | "report" | "account". Every function
+ * that calls sendEmail() must also declare `secrets: [resendApiKey]` in its
+ * onCall/onSchedule/onDocumentCreated options, or resendApiKey.value()
+ * below throws at runtime — 2nd-gen Cloud Functions only inject a secret
+ * into the functions that ask for it.
  */
-async function sendEmail({ to, subject, html }) {
+async function sendEmail({ to, subject, html, category = "account" }) {
+  const from = FROM_ADDRESSES[category] || FROM_ADDRESSES.account;
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${resendApiKey.value()}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ from: FROM_ADDRESS, to, subject, html }),
+    body: JSON.stringify({ from, to, subject, html }),
   });
   if (!res.ok) {
     const text = await res.text();

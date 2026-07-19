@@ -23,6 +23,7 @@ const onUserCreated = onDocumentCreated(
         to: data.email,
         subject: "Welcome to NursaFlow 👋",
         html: welcomeEmailHtml({ name: data.name }),
+        category: "welcome",
       });
     } catch (err) {
       // Don't throw — a failed welcome email shouldn't be retried forever

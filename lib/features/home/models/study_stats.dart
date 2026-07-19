@@ -62,6 +62,10 @@ class UserStudySettings {
     this.reminderTime = '19:00',
     this.emailNotificationsEnabled = true,
     this.lastReadDocumentId,
+    this.school = '',
+    this.matricNumber = '',
+    this.department = '',
+    this.level = '',
   });
 
   final double weeklyGoalHours;
@@ -69,6 +73,10 @@ class UserStudySettings {
   final String reminderTime; // "HH:mm", 24-hour
   final bool emailNotificationsEnabled; // opt-out — see functions/src/reminders.js and weeklyReport.js
   final String? lastReadDocumentId;
+  final String school; // institution name
+  final String matricNumber; // matriculation / registration number
+  final String department; // e.g. "Nursing Science"
+  final String level; // e.g. "300", "ND2"
 
   factory UserStudySettings.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>? ?? {};
@@ -78,6 +86,10 @@ class UserStudySettings {
       reminderTime: data['reminderTime'] as String? ?? '19:00',
       emailNotificationsEnabled: data['emailNotificationsEnabled'] as bool? ?? true,
       lastReadDocumentId: data['lastReadDocumentId'] as String?,
+      school: data['school'] as String? ?? '',
+      matricNumber: data['matricNumber'] as String? ?? '',
+      department: data['department'] as String? ?? '',
+      level: data['level'] as String? ?? '',
     );
   }
 }
@@ -117,6 +129,21 @@ Future<void> setEmailNotificationsEnabled(String uid, bool enabled) {
       .collection('users')
       .doc(uid)
       .set({'emailNotificationsEnabled': enabled}, SetOptions(merge: true));
+}
+
+Future<void> setStudentCredentials(
+  String uid, {
+  required String school,
+  required String matricNumber,
+  required String department,
+  required String level,
+}) {
+  return FirebaseFirestore.instance.collection('users').doc(uid).set({
+    'school': school,
+    'matricNumber': matricNumber,
+    'department': department,
+    'level': level,
+  }, SetOptions(merge: true));
 }
 
 Future<void> setLastReadDocument(String uid, String documentId) {

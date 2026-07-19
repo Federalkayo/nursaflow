@@ -93,6 +93,7 @@ const sendWeeklyReports = onSchedule({ schedule: SCHEDULE, secrets: [resendApiKe
               daysStudied,
               documentsAnalyzed,
             }),
+            category: "report",
           });
         }
 

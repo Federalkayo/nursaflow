@@ -88,27 +88,27 @@ flutter:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/images/logo2.png"
+  image_path: "assets/images/logo.png"
   min_sdk_android: 21
   # Adaptive icons (Android 8+): foreground is your logo, background is a
   # solid color behind it — this sidesteps the transparent/invisible-logo
   # problem entirely, since the OS composites the two layers itself.
   adaptive_icon_background: "#00535B"
-  adaptive_icon_foreground: "assets/images/logo2.png"
+  adaptive_icon_foreground: "assets/images/logo.png"
   web:
     generate: true
-    image_path: "assets/images/logo2.png"
+    image_path: "assets/images/logo.png"
     background_color: "#00535B"
     theme_color: "#00535B"
 
 # ---- Native splash screen (run: dart run flutter_native_splash:create) ----
 flutter_native_splash:
   color: "#FBF8FF"
-  image: assets/images/logo.png
+  image: assets/images/logo2.png
   # Android 12+ uses the OS's own splash-icon system (a built-in, non-
   # customizable zoom/fade) rather than a full-screen image like older
   # Android/iOS — icon_background_color is the circle behind the icon.
   android_12:
-    image: assets/images/logo.png
+    image: assets/images/logo2.png
     icon_background_color: "#FBF8FF"
   web: false

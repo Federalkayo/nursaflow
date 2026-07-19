@@ -43,15 +43,61 @@ class _StudyPlannerScreenState extends ConsumerState<StudyPlannerScreen> {
   void _addExamDate() {
     showModalBottomSheet(
       context: context,
+      useRootNavigator: true,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => const _AddExamSheet(),
     );
   }
 
+  void _addTask() {
+    showModalBottomSheet(
+      context: context,
+      useRootNavigator: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => const _AddTaskSheet(),
+    );
+  }
+
+  void _editTask(StudyTask task) {
+    showModalBottomSheet(
+      context: context,
+      useRootNavigator: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _AddTaskSheet(existingTask: task),
+    );
+  }
+
+  Future<void> _deleteEntry(String uid, String taskId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      useRootNavigator: true,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete this?'),
+        content: const Text('This can\'t be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await deletePlannerEntry(uid, taskId);
+    }
+  }
+
   Future<void> _editWeeklyGoal(BuildContext context, String uid, double current) async {
     final result = await showModalBottomSheet<double>(
       context: context,
+      useRootNavigator: true,
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
         padding: const EdgeInsets.all(AppSpacing.lg),
@@ -92,7 +138,7 @@ class _StudyPlannerScreenState extends ConsumerState<StudyPlannerScreen> {
     final hour = parts.isNotEmpty ? int.tryParse(parts[0]) ?? 19 : 19;
     final minute = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
     final initial = TimeOfDay(hour: hour, minute: minute);
-    final picked = await showTimePicker(context: context, initialTime: initial);
+    final picked = await showTimePicker(context: context, initialTime: initial, useRootNavigator: true);
     if (picked != null) {
       final formatted =
           '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
@@ -240,7 +286,27 @@ class _StudyPlannerScreenState extends ConsumerState<StudyPlannerScreen> {
                   ),
                   const SizedBox(height: AppSpacing.lg),
 
-                  Text("Today's Study Tasks", style: AppTextStyles.headlineMd()),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          "Today's Study Tasks",
+                          style: AppTextStyles.headlineMd(),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      TextButton.icon(
+                        onPressed: _addTask,
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        icon: const Icon(Symbols.add, size: 18),
+                        label: const Text('Add Task'),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: AppSpacing.sm),
                   if (tasksForSelectedDay.isEmpty)
                     Padding(
@@ -275,7 +341,58 @@ class _StudyPlannerScreenState extends ConsumerState<StudyPlannerScreen> {
                                 ],
                               ),
                             ),
-                            const Icon(Symbols.more_vert, color: AppColors.outline, size: 20),
+                            PopupMenuButton<String>(
+                              icon: const Icon(Symbols.more_vert, color: AppColors.outline, size: 20),
+                              onSelected: (value) {
+                                if (uid == null) return;
+                                if (value == 'edit') {
+                                  _editTask(t);
+                                } else if (value == 'delete') {
+                                  _deleteEntry(uid, t.id);
+                                }
+                              },
+                              itemBuilder: (context) => const [
+                                PopupMenuItem(value: 'edit', child: Text('Edit')),
+                                PopupMenuItem(value: 'delete', child: Text('Delete')),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: AppSpacing.sm),
+
+                  Text('Upcoming Exams', style: AppTextStyles.headlineMd()),
+                  const SizedBox(height: AppSpacing.sm),
+                  if (upcomingExams.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+                      child: Text('No exams scheduled yet.', style: AppTextStyles.bodyMd()),
+                    ),
+                  for (final e in upcomingExams)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                      child: AppCard(
+                        elevated: true,
+                        color: AppColors.surfaceContainerLowest,
+                        child: Row(
+                          children: [
+                            const Icon(Symbols.event_upcoming, color: AppColors.secondary),
+                            const SizedBox(width: AppSpacing.sm),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(e.title, style: AppTextStyles.labelLg()),
+                                  Text(DateFormat('EEE, MMM d, yyyy').format(e.dueDate),
+                                      style: AppTextStyles.bodySm()),
+                                ],
+                              ),
+                            ),
+                            Text(
+                              '${e.dueDate.difference(now).inDays + 1}d',
+                              style: AppTextStyles.labelLg(color: AppColors.secondary),
+                            ),
                           ],
                         ),
                       ),
@@ -467,6 +584,7 @@ class _AddExamSheetState extends State<_AddExamSheet> {
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
       context: context,
+      useRootNavigator: true,
       initialDate: DateTime.now().add(const Duration(days: 7)),
       firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 365)),
@@ -540,6 +658,146 @@ class _AddExamSheetState extends State<_AddExamSheet> {
                       ? DateFormat('MMM d, yyyy').format(_examDate!)
                       : 'Tap to select a date',
                 ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            ElevatedButton(
+              onPressed: _saving ? null : _save,
+              child: SizedBox(
+                width: double.infinity,
+                child: Text(
+                  _saving ? 'Saving…' : 'Save',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AddTaskSheet extends StatefulWidget {
+  const _AddTaskSheet({this.existingTask});
+
+  final StudyTask? existingTask;
+
+  @override
+  State<_AddTaskSheet> createState() => _AddTaskSheetState();
+}
+
+class _AddTaskSheetState extends State<_AddTaskSheet> {
+  late final _titleController =
+      TextEditingController(text: widget.existingTask?.title ?? '');
+  late final _subtitleController =
+      TextEditingController(text: widget.existingTask?.subtitle ?? '');
+  late DateTime _dueDate = widget.existingTask?.dueDate ?? DateTime.now();
+  bool _saving = false;
+
+  bool get _isEditing => widget.existingTask != null;
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _subtitleController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      useRootNavigator: true,
+      initialDate: _dueDate,
+      firstDate: DateTime.now().subtract(const Duration(days: 1)),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (picked != null) setState(() => _dueDate = picked);
+  }
+
+  Future<void> _save() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final title = _titleController.text.trim();
+    if (uid == null || title.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a task title.')),
+      );
+      return;
+    }
+
+    setState(() => _saving = true);
+    try {
+      if (_isEditing) {
+        await updateStudyTask(
+          uid,
+          widget.existingTask!.id,
+          title: title,
+          subtitle: _subtitleController.text.trim(),
+          dueDate: _dueDate,
+        );
+      } else {
+        await addStudyTask(
+          uid,
+          title: title,
+          subtitle: _subtitleController.text.trim(),
+          dueDate: _dueDate,
+        );
+      }
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to save: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: Container(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        decoration: const BoxDecoration(
+          color: AppColors.surfaceContainerLowest,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: AppSpacing.md),
+                decoration: BoxDecoration(
+                  color: AppColors.outlineVariant,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            Text(_isEditing ? 'Edit Task' : 'Add Task', style: AppTextStyles.headlineMd()),
+            const SizedBox(height: AppSpacing.md),
+            TextField(
+              controller: _titleController,
+              decoration: const InputDecoration(labelText: 'Task title'),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            TextField(
+              controller: _subtitleController,
+              decoration: const InputDecoration(labelText: 'Notes (optional)'),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            InkWell(
+              onTap: _pickDate,
+              child: InputDecorator(
+                decoration: const InputDecoration(labelText: 'Due Date'),
+                child: Text(DateFormat('MMM d, yyyy').format(_dueDate)),
               ),
             ),
             const SizedBox(height: AppSpacing.lg),

@@ -91,6 +91,7 @@ class HomeScreen extends ConsumerWidget {
   Future<void> _logStudyTime(BuildContext context, String uid) async {
     final minutes = await showModalBottomSheet<int>(
       context: context,
+      useRootNavigator: true,
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
         padding: const EdgeInsets.all(AppSpacing.lg),

@@ -14,6 +14,7 @@ import '../../core/theme/app_text_styles.dart';
 import '../../core/widgets/app_buttons.dart';
 import '../../core/widgets/responsive_page.dart';
 import '../home/models/document.dart';
+import '../home/models/study_stats.dart';
 
 class AccountScreen extends ConsumerStatefulWidget {
   const AccountScreen({super.key});
@@ -24,6 +25,11 @@ class AccountScreen extends ConsumerStatefulWidget {
 
 class _AccountScreenState extends ConsumerState<AccountScreen> {
   late final TextEditingController _nameController;
+  final _schoolController = TextEditingController();
+  final _matricController = TextEditingController();
+  final _departmentController = TextEditingController();
+  final _levelController = TextEditingController();
+  bool _credentialsPrefilled = false;
 
   // The picked avatar, held in memory until Save is tapped. Using bytes
   // (rather than a File path) works uniformly across mobile and web, same
@@ -42,6 +48,10 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
   @override
   void dispose() {
     _nameController.dispose();
+    _schoolController.dispose();
+    _matricController.dispose();
+    _departmentController.dispose();
+    _levelController.dispose();
     super.dispose();
   }
 
@@ -124,6 +134,14 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
         await user.updateDisplayName(newName);
       }
 
+      await setStudentCredentials(
+        user.uid,
+        school: _schoolController.text.trim(),
+        matricNumber: _matricController.text.trim(),
+        department: _departmentController.text.trim(),
+        level: _levelController.text.trim(),
+      );
+
       // updateDisplayName/updatePhotoURL don't refresh the cached
       // currentUser synchronously — reload() pulls the update down so the
       // very next read (including currentUserProvider's next emission)
@@ -147,6 +165,17 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
     final existingPhotoUrl = user?.photoURL;
+
+    final settingsAsync = ref.watch(userStudySettingsProvider);
+    settingsAsync.whenData((settings) {
+      if (!_credentialsPrefilled) {
+        _credentialsPrefilled = true;
+        _schoolController.text = settings.school;
+        _matricController.text = settings.matricNumber;
+        _departmentController.text = settings.department;
+        _levelController.text = settings.level;
+      }
+    });
 
     return Scaffold(
       appBar: AppBar(title: const Text('Account')),
@@ -208,6 +237,48 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
               Text(
                 user?.email ?? '',
                 style: AppTextStyles.bodySm(color: AppColors.onSurfaceVariant),
+              ),
+              const SizedBox(height: AppSpacing.xl),
+
+              Text('Student Credentials', style: AppTextStyles.labelLg()),
+              const SizedBox(height: AppSpacing.sm),
+              TextField(
+                controller: _schoolController,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(
+                  labelText: 'School / Institution',
+                  hintText: 'e.g. University of Lagos',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              TextField(
+                controller: _matricController,
+                textCapitalization: TextCapitalization.characters,
+                decoration: const InputDecoration(
+                  labelText: 'Matric / Registration Number',
+                  hintText: 'e.g. NUR/20/1234',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              TextField(
+                controller: _departmentController,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(
+                  labelText: 'Department',
+                  hintText: 'e.g. Nursing Science',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              TextField(
+                controller: _levelController,
+                decoration: const InputDecoration(
+                  labelText: 'Level',
+                  hintText: 'e.g. 300',
+                  border: OutlineInputBorder(),
+                ),
               ),
               const SizedBox(height: AppSpacing.xl),
 

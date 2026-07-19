@@ -93,6 +93,7 @@ const paystackWebhook = onRequest(
             reference,
             renewsAt: renewsAt.toDateString(),
           }),
+          category: "receipt",
         });
       }
     } catch (err) {
