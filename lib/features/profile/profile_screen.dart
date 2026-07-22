@@ -137,7 +137,7 @@ class ProfileScreen extends ConsumerWidget {
                       icon: Symbols.shield,
                       title: 'Data Privacy',
                       subtitle: 'Storage settings and security',
-                      onTap: () => _comingSoon(context, 'Data & privacy settings'),
+                      onTap: () => context.push('/data-privacy'),
                     ),
                     const Divider(height: 1, indent: 56),
                     _SettingsRow(
