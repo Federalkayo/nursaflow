@@ -9,6 +9,7 @@ const { buildAnalysisPrompt } = require("./prompts");
 const { fallbackAnalysis } = require("./fallback");
 const { generateIllustration } = require("./imageGen");
 const { createNotification } = require("./notifications");
+const { isPremiumActive, FREE_DOCUMENT_LIMIT } = require("./planLimits");
 
 /**
  * Fires whenever a new document is created at
@@ -46,6 +47,37 @@ const analyzeDocument = onDocumentCreated(
     const docRef = snapshot.ref;
 
     logger.info(`Analyzing document ${documentId} for user ${userId}`, { title, course });
+
+    // Free-plan enforcement: block analysis (not the upload itself, which
+    // already happened client-side by the time this trigger fires) once a
+    // free user has more than FREE_DOCUMENT_LIMIT documents. Blocking
+    // analysis rather than the Firestore write is what actually matters —
+    // an unanalyzed document has no summaries/flashcards/quizzes, so it's
+    // useless to the user either way, and this avoids needing a Firestore
+    // Security Rule that can count a subcollection (rules can't do that
+    // without a separately-maintained counter field).
+    const userSnap = await admin.firestore().collection("users").doc(userId).get();
+    if (!isPremiumActive(userSnap.data())) {
+      const existingDocsSnap = await admin
+        .firestore()
+        .collection("users")
+        .doc(userId)
+        .collection("documents")
+        .get();
+      if (existingDocsSnap.size > FREE_DOCUMENT_LIMIT) {
+        logger.info(
+          `Document ${documentId} blocked — free plan limit (${FREE_DOCUMENT_LIMIT}) reached for user ${userId}`,
+        );
+        await docRef.set(
+          {
+            status: "limitReached",
+            error: `Free plan limit of ${FREE_DOCUMENT_LIMIT} documents reached. Upgrade to Premium for unlimited uploads.`,
+          },
+          { merge: true },
+        );
+        return;
+      }
+    }
 
     // 1. Try to locate and read the uploaded source file from Storage.
     let sourceText = "";

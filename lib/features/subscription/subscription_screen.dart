@@ -181,6 +181,9 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                             renewsAt.isAfter(DateTime.now());
                         final activePlan = sub?['plan'] as String?; // 'monthly' | 'annual'
 
+                        final viewedCycleKey = _cycle == BillingCycle.monthly ? 'monthly' : 'annual';
+                        final isActiveOnViewedCycle = isActive && activePlan == viewedCycleKey;
+
                         final free = _PlanCard(
                           title: 'Free',
                           price: '₦0',
@@ -200,17 +203,16 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                               : null,
                           features: PlanCatalog.premiumFeatures,
                           isPrimary: true,
-                          ctaLabel: isActive
-                              ? (activePlan == (_cycle == BillingCycle.monthly ? 'monthly' : 'annual')
-                                  ? 'Current Plan'
-                                  : 'Switch to this plan')
-                              : 'Upgrade to Premium',
+                          ctaLabel: isActiveOnViewedCycle
+                              ? 'Current Plan'
+                              : (isActive ? 'Switch to this plan' : 'Upgrade to Premium'),
                           isLoading: _isProcessing,
-                          onTap: isActive &&
-                                  activePlan == (_cycle == BillingCycle.monthly ? 'monthly' : 'annual')
-                              ? null
-                              : _upgrade,
-                          badge: isActive
+                          onTap: isActiveOnViewedCycle ? null : _upgrade,
+                          // Only the tab matching what was actually purchased
+                          // gets the ACTIVE badge — the other tab falls back
+                          // to BEST VALUE (annual) or nothing (monthly), same
+                          // as a never-subscribed user would see.
+                          badge: isActiveOnViewedCycle
                               ? 'ACTIVE'
                               : (_cycle == BillingCycle.annual ? 'BEST VALUE' : null),
                         );

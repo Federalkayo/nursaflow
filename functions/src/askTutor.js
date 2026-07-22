@@ -6,6 +6,11 @@ const { getStorage } = require("firebase-admin/storage");
 const { generateText, GROQ_API_KEY } = require("./groq");
 const { buildTutorPrompt } = require("./prompts");
 const { generateImageFromPrompt } = require("./imageGen");
+const {
+  isPremiumActive,
+  FREE_AI_TUTOR_MONTHLY_LIMIT,
+  currentMonthKey,
+} = require("./planLimits");
 
 // Broad on purpose — false positives here just mean an occasional bonus
 // picture, which is harmless for a study app. False negatives mean a
@@ -98,6 +103,27 @@ const askTutor = onCall(
     }
 
     const userRef = admin.firestore().collection("users").doc(uid);
+
+    // Free-plan enforcement: gate BEFORE calling Groq at all, since this is
+    // the only path to an AI Tutor reply — unlike document uploads, there's
+    // no separate client-side action to intercept, so this check is the
+    // real enforcement (not just a backstop). monthKey/currentCount are
+    // reused below, after a successful reply, to write the incremented
+    // counter without a second read.
+    const userSnap = await userRef.get();
+    const userData = userSnap.data() || {};
+    const isPremium = isPremiumActive(userData);
+    const monthKey = currentMonthKey();
+    const storedMonthKey = userData.aiTutorMessageMonthKey;
+    const currentCount = storedMonthKey === monthKey ? (userData.aiTutorMessageCount || 0) : 0;
+
+    if (!isPremium && currentCount >= FREE_AI_TUTOR_MONTHLY_LIMIT) {
+      throw new HttpsError(
+        "resource-exhausted",
+        `You've used all ${FREE_AI_TUTOR_MONTHLY_LIMIT} AI Tutor messages included in the free plan this month. Upgrade to Premium for unlimited access.`,
+      );
+    }
+
     const chatCollection = documentId
       ? userRef.collection("documents").doc(documentId).collection("messages")
       : userRef.collection("general_messages");
@@ -179,11 +205,19 @@ const askTutor = onCall(
       timestamp: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    // Not calling notifyTutorReplyReady() here on purpose: this function is
-    // synchronous, so the reply written above already reached the client in
-    // this same request/response — a push notification for it would just be
-    // a duplicate. See the STUB comment on notifyTutorReplyReady in
-    // functions/src/notifications.js for when to wire it in.
+    // Only free users need this tracked at all — skip the extra write for
+    // premium accounts, whose usage is unlimited regardless.
+    if (!isPremium) {
+      await userRef.set(
+        storedMonthKey === monthKey
+          ? {
+              aiTutorMessageCount: admin.firestore.FieldValue.increment(1),
+              aiTutorMessageMonthKey: monthKey,
+            }
+          : { aiTutorMessageCount: 1, aiTutorMessageMonthKey: monthKey },
+        { merge: true },
+      );
+    }
 
     return { success: true };
   }

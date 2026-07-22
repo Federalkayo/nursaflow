@@ -46,6 +46,46 @@ class _DocumentSummaryScreenState extends ConsumerState<DocumentSummaryScreen> {
 
     return documentAsync.when(
       data: (doc) {
+        if (doc.status == DocumentStatus.limitReached) {
+          return Scaffold(
+            appBar: AppBar(
+              leading: IconButton(
+                icon: const Icon(Symbols.close),
+                onPressed: () => context.go('/home'),
+              ),
+              title: const Text('Study Hub'),
+            ),
+            body: SafeArea(
+              child: ResponsivePage(
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 420),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Symbols.workspace_premium, size: 64, color: AppColors.primary),
+                        const SizedBox(height: AppSpacing.lg),
+                        Text('Free plan limit reached', style: AppTextStyles.headlineMd()),
+                        const SizedBox(height: AppSpacing.xs),
+                        Text(
+                          "You've reached the free plan's document limit. Upgrade to Premium for unlimited uploads, flashcards, and quizzes.",
+                          textAlign: TextAlign.center,
+                          style: AppTextStyles.bodyMd(),
+                        ),
+                        const SizedBox(height: AppSpacing.lg),
+                        PrimaryButton(
+                          label: 'Upgrade to Premium',
+                          onPressed: () => context.push('/subscription'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
+
         if (doc.status == DocumentStatus.processing) {
           return Scaffold(
             appBar: AppBar(

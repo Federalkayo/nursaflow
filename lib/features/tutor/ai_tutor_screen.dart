@@ -117,14 +117,35 @@ class _AiTutorScreenState extends ConsumerState<AiTutorScreen> {
           'message': text,
         });
       } catch (e) {
+        final isLimitReached =
+            e is FirebaseFunctionsException && e.code == 'resource-exhausted';
+
         // If the function call itself fails (network issue, cold start
         // timeout, etc.), surface a friendly message directly rather than
         // leaving the student staring at a stuck typing indicator forever.
+        // The free-plan limit is a distinct, expected case — worth a
+        // specific message + an actual way to fix it, not the generic
+        // "try again" text, which would just fail identically on retry.
         await chatCollection.add({
           'sender': TutorSender.ai.name,
-          'text': "Sorry, I'm having trouble connecting right now. Please try again.",
+          'text': isLimitReached
+              ? (e as FirebaseFunctionsException).message ??
+                  "You've reached the free plan's AI Tutor limit for this month."
+              : "Sorry, I'm having trouble connecting right now. Please try again.",
           'timestamp': FieldValue.serverTimestamp(),
         });
+
+        if (isLimitReached && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('AI Tutor limit reached for this month'),
+              action: SnackBarAction(
+                label: 'Upgrade',
+                onPressed: () => context.push('/subscription'),
+              ),
+            ),
+          );
+        }
       } finally {
         if (mounted) {
           setState(() {

@@ -113,6 +113,17 @@ function weeklyReportEmailHtml({ name, totalMinutes, daysStudied, documentsAnaly
   `);
 }
 
+function expiryReminderEmailHtml({ name, daysLeft, planName }) {
+  return layout(`
+    <h1 style="font-size: 22px; margin: 0 0 12px;">Your plan expires soon</h1>
+    <p style="font-size: 15px; line-height: 1.6;">
+      Hi${name ? ` ${name}` : ""}, your NursaFlow ${planName} plan expires in
+      ${daysLeft} day${daysLeft === 1 ? "" : "s"}. Renew now to keep unlimited uploads,
+      flashcards, quizzes, and AI Tutor access.
+    </p>
+  `);
+}
+
 /**
  * Generic wrapper for one-off account-related emails (password changed,
  * plan cancelled, etc.) — not tied to a specific trigger yet since none of
@@ -134,5 +145,6 @@ module.exports = {
   receiptEmailHtml,
   dailyReminderEmailHtml,
   weeklyReportEmailHtml,
+  expiryReminderEmailHtml,
   accountNotificationEmailHtml,
 };
