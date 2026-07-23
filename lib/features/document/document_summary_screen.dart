@@ -447,20 +447,44 @@ class _SegmentedTabs extends StatelessWidget {
     Widget tab(String label, _Tab t, VoidCallback onTap) {
       final selected = t == active;
       return Expanded(
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(10),
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            decoration: BoxDecoration(
-              color: selected ? AppColors.primary : Colors.transparent,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Text(
-              label,
-              textAlign: TextAlign.center,
-              style: AppTextStyles.labelSm(
-                color: selected ? Colors.white : AppColors.onSurfaceVariant,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(12),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+              decoration: BoxDecoration(
+                color: selected ? AppColors.primary : AppColors.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: selected
+                      ? AppColors.primary
+                      : AppColors.outlineVariant.withValues(alpha: 0.4),
+                  width: 1,
+                ),
+                boxShadow: [
+                  if (selected)
+                    BoxShadow(
+                      color: AppColors.primary.withValues(alpha: 0.25),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    )
+                  else
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.03),
+                      blurRadius: 4,
+                      offset: const Offset(0, 1),
+                    ),
+                ],
+              ),
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                style: AppTextStyles.labelSm(
+                  color: selected ? Colors.white : AppColors.onSurfaceVariant,
+                ).copyWith(fontWeight: selected ? FontWeight.w600 : FontWeight.w500),
               ),
             ),
           ),
@@ -468,29 +492,18 @@ class _SegmentedTabs extends StatelessWidget {
       );
     }
 
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          tab('Summary', _Tab.summary, () {}),
-          tab('Flashcards', _Tab.flashcards,
-              () => context.push('/document/$documentId/flashcards')),
-          tab('Quiz', _Tab.quiz, () => context.push('/document/$documentId/quiz')),
-          tab('Resources', _Tab.resources,
-              () => context.push('/document/$documentId/resources')),
-        ],
-      ),
+    return Row(
+      children: [
+        tab('Summary', _Tab.summary, () {}),
+        const SizedBox(width: 8),
+        tab('Flashcards', _Tab.flashcards,
+            () => context.push('/document/$documentId/flashcards')),
+        const SizedBox(width: 8),
+        tab('Quiz', _Tab.quiz, () => context.push('/document/$documentId/quiz')),
+        const SizedBox(width: 8),
+        tab('Resources', _Tab.resources,
+            () => context.push('/document/$documentId/resources')),
+      ],
     );
   }
 }
