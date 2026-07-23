@@ -4,9 +4,50 @@ service cloud.firestore {
     match /users/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
       match /documents/{docId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
-        match /{subcollection}/{subDocId} {
-          allow read, write: if request.auth != null && request.auth.uid == userId;
+        allow read: if request.auth != null && request.auth.uid == userId;
+        // Client creates the initial placeholder doc on upload (see
+        // upload_screen.dart). Everything else on this doc — clinicalOverview,
+        // keyQuote, memoryTrick, keyPrinciples, assessmentNote,
+        // assessmentHierarchy, clinicalRedFlags, takeaways, mermaid,
+        // illustrationPath, mainTopic — is written server-side by
+        // analyzeDocument.js via the Admin SDK, which bypasses these rules
+        // entirely. The client must never be able to write those fields
+        // directly.
+        allow create: if request.auth != null && request.auth.uid == userId
+          && request.resource.data.keys().hasOnly(
+               ['title', 'course', 'status', 'pageCount', 'progress', 'createdAt']);
+        // After creation, the client only ever updates quiz/flashcard
+        // progress (see quiz_screen.dart, flashcards_screen.dart).
+        allow update: if request.auth != null && request.auth.uid == userId
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['progress']);
+        // Delete is separate from update — lets the client remove a
+        // document (and account-deletion clean up) without opening up
+        // arbitrary field writes above.
+        allow delete: if request.auth != null && request.auth.uid == userId;
+        // AI-generated, read-only from the client — analyzeDocument.js
+        // writes these via the Admin SDK. Delete is allowed so removing the
+        // parent document (or a full account deletion) can also clear these
+        // out; the client still can never create or edit their content.
+        match /flashcards/{cardId} {
+          allow read: if request.auth != null && request.auth.uid == userId;
+          allow delete: if request.auth != null && request.auth.uid == userId;
+        }
+        match /quizzes/{questionId} {
+          allow read: if request.auth != null && request.auth.uid == userId;
+          allow delete: if request.auth != null && request.auth.uid == userId;
+        }
+        // Chat messages: the client writes the student's own message, plus
+        // an occasional fallback "connection failed" message on the AI's
+        // behalf when the askTutor call itself errors out (see
+        // ai_tutor_screen.dart). The real AI reply is written server-side by
+        // askTutor.js via the Admin SDK. Messages are never edited once
+        // sent, but delete is allowed for document/account cleanup.
+        match /messages/{messageId} {
+          allow read: if request.auth != null && request.auth.uid == userId;
+          allow create: if request.auth != null && request.auth.uid == userId
+            && request.resource.data.keys().hasOnly(['sender', 'text', 'timestamp'])
+            && request.resource.data.sender in ['user', 'ai'];
+          allow delete: if request.auth != null && request.auth.uid == userId;
         }
       }
       match /planner/{taskId} {
@@ -17,6 +58,21 @@ service cloud.firestore {
         match /messages/{messageId} {
           allow read, write: if request.auth != null && request.auth.uid == userId;
         }
+      }
+      match /general_messages/{messageId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+      match /studyLog/{entryId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+      match /notifications/{notificationId} {
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow update: if request.auth != null && request.auth.uid == userId
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+        // Delete is separate from update so "mark all read" (which only
+        // ever touches the `read` field) stays locked down, while clearing
+        // notifications or deleting the account can still remove them.
+        allow delete: if request.auth != null && request.auth.uid == userId;
       }
     }
     match /{document=**} {

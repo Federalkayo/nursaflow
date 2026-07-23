@@ -137,6 +137,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
         return 'Incorrect email or password.';
       case 'network-request-failed':
         return 'Network error — check your connection and try again.';
+      case 'account-exists-with-different-credential':
+        return 'An account already exists with this email using a password. '
+            'Please sign in with your email and password instead, or use '
+            '"Forgot password" if you don\'t remember it.';
       default:
         return e.message ?? 'Authentication failed. Please try again.';
     }

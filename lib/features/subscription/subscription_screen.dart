@@ -62,7 +62,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
         'cycle': _cycle == BillingCycle.monthly ? 'monthly' : 'annual',
       });
       final authorizationUrl = result.data['authorizationUrl'] as String?;
-      if (authorizationUrl == null) {
+      final reference = result.data['reference'] as String?;
+      if (authorizationUrl == null || reference == null) {
         throw Exception('No checkout URL returned');
       }
 
@@ -71,7 +72,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
 
       final success = await Navigator.of(context).push<bool>(
         MaterialPageRoute(
-          builder: (_) => _PaystackCheckoutPage(url: authorizationUrl, uid: uid),
+          builder: (_) =>
+              _PaystackCheckoutPage(url: authorizationUrl, uid: uid, reference: reference),
         ),
       );
 
@@ -450,15 +452,21 @@ class _FaqTile extends StatelessWidget {
 }
 
 /// Hosts the Paystack checkout page in a WebView and watches Firestore for
-/// the webhook (functions/src/paystackWebhook.js) to flip
-/// `subscription.status` to 'active' — rather than trying to parse
-/// Paystack's post-payment redirect URL, which would need a hosted
-/// callback page this app doesn't have. Pops with `true` on success so the
-/// caller can show a confirmation snackbar.
+/// the webhook (functions/src/paystackWebhook.js) to write a
+/// lastPaymentReference matching THIS specific checkout attempt — rather
+/// than trying to parse Paystack's post-payment redirect URL, which would
+/// need a hosted callback page this app doesn't have. Pops with `true` on
+/// success so the caller can show a confirmation snackbar.
+///
+/// Checking `lastPaymentReference == reference` rather than just
+/// `status == 'active'` matters: a user switching plans (or renewing) is
+/// already active from their PREVIOUS payment, so a bare status check would
+/// false-positive and pop immediately, before they'd paid for anything new.
 class _PaystackCheckoutPage extends StatefulWidget {
-  const _PaystackCheckoutPage({required this.url, required this.uid});
+  const _PaystackCheckoutPage({required this.url, required this.uid, required this.reference});
   final String url;
   final String uid;
+  final String reference;
 
   @override
   State<_PaystackCheckoutPage> createState() => _PaystackCheckoutPageState();
@@ -481,8 +489,9 @@ class _PaystackCheckoutPageState extends State<_PaystackCheckoutPage> {
         .doc(widget.uid)
         .snapshots()
         .listen((doc) {
-      final status = doc.data()?['subscription']?['status'];
-      if (status == 'active' && !_closed && mounted) {
+      final sub = doc.data()?['subscription'];
+      final matchesThisPayment = sub?['lastPaymentReference'] == widget.reference;
+      if (sub?['status'] == 'active' && matchesThisPayment && !_closed && mounted) {
         _closed = true;
         Navigator.of(context).pop(true);
       }
