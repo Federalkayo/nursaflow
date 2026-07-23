@@ -54,7 +54,8 @@ class ProfileScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final docCount = ref.watch(userDocumentsProvider).valueOrNull?.length ?? 0;
-    final user = ref.watch(currentUserProvider).valueOrNull ?? FirebaseAuth.instance.currentUser;
+    final user = ref.watch(currentUserProvider).valueOrNull ??
+        FirebaseAuth.instance.currentUser;
     return Scaffold(
       appBar: AppBar(title: const Text('Profile')),
       body: SafeArea(
@@ -69,10 +70,12 @@ class ProfileScreen extends ConsumerWidget {
                         CircleAvatar(
                           radius: 44,
                           backgroundColor: AppColors.surfaceContainerHigh,
-                          backgroundImage:
-                              user?.photoURL != null ? NetworkImage(user!.photoURL!) : null,
+                          backgroundImage: user?.photoURL != null
+                              ? NetworkImage(user!.photoURL!)
+                              : null,
                           child: user?.photoURL == null
-                              ? const Icon(Symbols.person, size: 44, color: AppColors.primary)
+                              ? const Icon(Symbols.person,
+                                  size: 44, color: AppColors.primary)
                               : null,
                         ),
                         Positioned(
@@ -86,14 +89,16 @@ class ProfileScreen extends ConsumerWidget {
                                 color: AppColors.primary,
                                 shape: BoxShape.circle,
                               ),
-                              child: const Icon(Symbols.edit, size: 14, color: Colors.white),
+                              child: const Icon(Symbols.edit,
+                                  size: 14, color: Colors.white),
                             ),
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: AppSpacing.sm),
-                    Text(user?.displayName ?? 'User', style: AppTextStyles.headlineMd()),
+                    Text(user?.displayName ?? 'User',
+                        style: AppTextStyles.headlineMd()),
                     if (user?.email != null)
                       Text(user!.email!, style: AppTextStyles.bodySm()),
                   ],
@@ -112,7 +117,10 @@ class ProfileScreen extends ConsumerWidget {
               // Total Hours and Mastery Score removed — there's no study-time
               // tracking or quiz-mastery scoring built yet, and showing made
               // up numbers here would be worse than showing nothing.
-              _StatCard(icon: Symbols.description, value: '$docCount', label: 'Docs Uploaded'),
+              _StatCard(
+                  icon: Symbols.description,
+                  value: '$docCount',
+                  label: 'Docs Uploaded'),
               const SizedBox(height: AppSpacing.lg),
 
               AppCard(
@@ -159,7 +167,8 @@ class ProfileScreen extends ConsumerWidget {
               ),
               const SizedBox(height: AppSpacing.lg),
               Center(
-                child: Text('NursaFlow Version 1.0.0', style: AppTextStyles.bodySm()),
+                child: Text('NursaFlow Version 1.0.0',
+                    style: AppTextStyles.bodySm()),
               ),
               const SizedBox(height: 96),
             ],
@@ -171,7 +180,8 @@ class ProfileScreen extends ConsumerWidget {
 }
 
 class _StatCard extends StatelessWidget {
-  const _StatCard({required this.icon, required this.value, required this.label});
+  const _StatCard(
+      {required this.icon, required this.value, required this.label});
   final IconData icon;
   final String value;
   final String label;
@@ -222,9 +232,12 @@ class _SettingsRow extends StatelessWidget {
     return ListTile(
       onTap: onTap,
       leading: Icon(icon, color: titleColor ?? AppColors.onSurfaceVariant),
-      title: Text(title, style: AppTextStyles.labelLg(color: titleColor ?? AppColors.onSurface)),
+      title: Text(title,
+          style:
+              AppTextStyles.labelLg(color: titleColor ?? AppColors.onSurface)),
       subtitle: Text(subtitle, style: AppTextStyles.bodySm()),
-      trailing: trailing ?? const Icon(Symbols.chevron_right, color: AppColors.outline),
+      trailing: trailing ??
+          const Icon(Symbols.chevron_right, color: AppColors.outline),
     );
   }
 }

@@ -435,7 +435,7 @@ class _DocumentSummaryScreenState extends ConsumerState<DocumentSummaryScreen> {
   }
 }
 
-enum _Tab { summary, flashcards, quiz, resources, tutor }
+enum _Tab { summary, flashcards, quiz, resources }
 
 class _SegmentedTabs extends StatelessWidget {
   const _SegmentedTabs({required this.documentId, required this.active});
@@ -469,10 +469,17 @@ class _SegmentedTabs extends StatelessWidget {
     }
 
     return Container(
-      padding: const EdgeInsets.all(3),
+      padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         color: AppColors.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Row(
         children: [
@@ -482,8 +489,6 @@ class _SegmentedTabs extends StatelessWidget {
           tab('Quiz', _Tab.quiz, () => context.push('/document/$documentId/quiz')),
           tab('Resources', _Tab.resources,
               () => context.push('/document/$documentId/resources')),
-          tab('Ask Tutor', _Tab.tutor,
-              () => context.push('/tutor?documentId=$documentId')),
         ],
       ),
     );
