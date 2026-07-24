@@ -473,6 +473,12 @@ class _PaystackCheckoutPage extends StatefulWidget {
 }
 
 class _PaystackCheckoutPageState extends State<_PaystackCheckoutPage> {
+  // Must match the callback_url set in functions/src/paystack.js exactly —
+  // Paystack redirects here after a successful charge. This URL is never
+  // actually loaded; onNavigationRequest below intercepts it before the
+  // WebView navigates there.
+  static const _callbackUrlPrefix = 'https://example.com/payment-callback';
+
   late final WebViewController _controller;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _sub;
   bool _closed = false;
@@ -482,8 +488,14 @@ class _PaystackCheckoutPageState extends State<_PaystackCheckoutPage> {
     super.initState();
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setNavigationDelegate(
+        NavigationDelegate(onNavigationRequest: _onNavigationRequest),
+      )
       ..loadRequest(Uri.parse(widget.url));
 
+    // Fallback path: the webhook is the durable source of truth and will
+    // land here even if the fast-path verify call below fails for any
+    // reason (e.g. no network right at the redirect moment).
     _sub = FirebaseFirestore.instance
         .collection('users')
         .doc(widget.uid)
@@ -491,11 +503,41 @@ class _PaystackCheckoutPageState extends State<_PaystackCheckoutPage> {
         .listen((doc) {
       final sub = doc.data()?['subscription'];
       final matchesThisPayment = sub?['lastPaymentReference'] == widget.reference;
-      if (sub?['status'] == 'active' && matchesThisPayment && !_closed && mounted) {
-        _closed = true;
-        Navigator.of(context).pop(true);
+      if (sub?['status'] == 'active' && matchesThisPayment) {
+        _closeSuccessfully();
       }
     });
+  }
+
+  // Fast path: fires the instant Paystack redirects to the callback URL,
+  // often seconds before the webhook arrives. Calls Paystack's own verify
+  // endpoint (via verifyPaystackTransaction) rather than trusting the
+  // redirect alone, so this can't be spoofed by just reaching that URL.
+  FutureOr<NavigationDecision> _onNavigationRequest(NavigationRequest request) {
+    if (request.url.startsWith(_callbackUrlPrefix)) {
+      _verifyAndClose();
+      return NavigationDecision.prevent;
+    }
+    return NavigationDecision.navigate;
+  }
+
+  Future<void> _verifyAndClose() async {
+    try {
+      final callable = FirebaseFunctions.instance.httpsCallable('verifyPaystackTransaction');
+      await callable.call<Map<String, dynamic>>({'reference': widget.reference});
+      _closeSuccessfully();
+    } catch (_) {
+      // Swallow — the Firestore listener above stays active as a fallback
+      // once the webhook eventually lands, so a transient failure here
+      // (e.g. no connectivity at the exact redirect moment) doesn't strand
+      // the user on this screen forever.
+    }
+  }
+
+  void _closeSuccessfully() {
+    if (_closed || !mounted) return;
+    _closed = true;
+    Navigator.of(context).pop(true);
   }
 
   @override

@@ -1,7 +1,12 @@
 import 'dart:io';
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -28,6 +33,13 @@ const _addCourseSentinel = '__add_new_course__';
 
 const _availableTags = ['Cardiovascular', 'Endocrine', 'Neurology', 'Renal', 'Pediatrics'];
 
+// Handled natively in MainActivity.kt — opens Android's document picker
+// pre-navigated into Google Drive specifically, rather than the generic
+// "choose a storage source" picker. Android only; iOS/other platforms
+// fall back to the regular file picker, where Drive already appears as
+// one of several sources.
+const _drivePickerChannel = MethodChannel('nursaflow/drive_picker');
+
 class UploadScreen extends ConsumerStatefulWidget {
   const UploadScreen({super.key});
 
@@ -38,7 +50,10 @@ class UploadScreen extends ConsumerStatefulWidget {
 class _UploadScreenState extends ConsumerState<UploadScreen> {
   _UploadState _state = _UploadState.idle;
   String? _fileName;
-  FilePickerResult? _pickedFileResult;
+  Uint8List? _pickedBytes;
+  // Set only for Camera Scan uploads, so _analyze() can give the document
+  // a friendlier default title than a raw "scan_1690000000000" filename.
+  String? _titleOverride;
   late final List<String> _courses = List.of(_defaultCourses);
   String _selectedCourse = _defaultCourses.first;
   final Set<String> _selectedTags = {};
@@ -74,21 +89,95 @@ class _UploadScreenState extends ConsumerState<UploadScreen> {
     });
   }
 
-  Future<void> _pickFile() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['pdf', 'ppt', 'pptx', 'doc', 'docx'],
-    );
-    if (result == null || result.files.isEmpty) return;
+  void _setPicked({required String fileName, required Uint8List bytes, String? titleOverride}) {
     setState(() {
-      _fileName = result.files.first.name;
-      _pickedFileResult = result;
+      _fileName = fileName;
+      _pickedBytes = bytes;
+      _titleOverride = titleOverride;
       _state = _UploadState.picked;
     });
   }
 
+  Future<void> _pickFile() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf', 'ppt', 'pptx', 'doc', 'docx'],
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) return;
+
+    final picked = result.files.first;
+    Uint8List? bytes = picked.bytes;
+    if (bytes == null && picked.path != null) {
+      bytes = await File(picked.path!).readAsBytes();
+    }
+    if (bytes == null) return;
+
+    _setPicked(fileName: picked.name, bytes: bytes);
+  }
+
+  /// Opens Android's document picker pre-navigated straight into Google
+  /// Drive via the native platform channel. On non-Android platforms (or
+  /// if the native side reports Drive isn't reachable on this device),
+  /// falls back to the regular file picker.
+  Future<void> _pickFromGoogleDrive() async {
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      await _pickFile();
+      return;
+    }
+
+    try {
+      final result = await _drivePickerChannel.invokeMethod('pickFromDrive');
+      if (result == null) return; // user cancelled
+      final map = Map<String, dynamic>.from(result as Map);
+      final bytes = map['bytes'] as Uint8List;
+      final name = map['name'] as String? ?? 'document';
+      _setPicked(fileName: name, bytes: bytes);
+    } on PlatformException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not open Google Drive: ${e.message ?? "unknown error"}')),
+      );
+    }
+  }
+
+  /// Opens the camera, compresses the photo (keeps it readable for OCR
+  /// while capping upload size), and stores it exactly like any other
+  /// picked file — analyzeDocument.js's extractText() dispatches JPEGs to
+  /// Groq's vision model for transcription automatically.
+  Future<void> _scanWithCamera() async {
+    try {
+      final photo = await ImagePicker().pickImage(
+        source: ImageSource.camera,
+        maxWidth: 2400,
+        imageQuality: 90,
+      );
+      if (photo == null) return;
+
+      final rawBytes = await photo.readAsBytes();
+      final compressed = await FlutterImageCompress.compressWithList(
+        rawBytes,
+        minWidth: 1600,
+        minHeight: 1600,
+        quality: 85,
+        format: CompressFormat.jpeg,
+      );
+
+      _setPicked(
+        fileName: 'scan_${DateTime.now().millisecondsSinceEpoch}.jpg',
+        bytes: compressed,
+        titleOverride: 'Scanned Note',
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not open camera: $e')),
+      );
+    }
+  }
+
   Future<void> _analyze() async {
-    if (_fileName == null || _pickedFileResult == null) return;
+    if (_fileName == null || _pickedBytes == null) return;
     setState(() => _state = _UploadState.processing);
 
     try {
@@ -108,14 +197,7 @@ class _UploadScreenState extends ConsumerState<UploadScreen> {
           .child('users/${user.uid}/documents/$documentId/$_fileName');
 
       try {
-        final file = _pickedFileResult!.files.first;
-        if (file.bytes != null) {
-          await storageRef.putData(file.bytes!);
-        } else if (file.path != null) {
-          await storageRef.putFile(File(file.path!));
-        } else {
-          throw Exception('No file data available');
-        }
+        await storageRef.putData(_pickedBytes!);
       } catch (storageError) {
         debugPrint('Firebase Storage upload warning: $storageError. Proceeding with Firestore creation.');
       }
@@ -128,7 +210,7 @@ class _UploadScreenState extends ConsumerState<UploadScreen> {
           .doc(documentId);
 
       await docRef.set({
-        'title': _fileName!.split('.').first,
+        'title': _titleOverride ?? _fileName!.split('.').first,
         'course': _selectedCourse,
         'status': DocumentStatus.processing.name,
         'pageCount': 12,
@@ -196,7 +278,7 @@ class _UploadScreenState extends ConsumerState<UploadScreen> {
                         child: _SourceButton(
                           icon: Symbols.add_to_drive,
                           label: 'Google Drive',
-                          onTap: _pickFile,
+                          onTap: _pickFromGoogleDrive,
                         ),
                       ),
                       const SizedBox(width: AppSpacing.sm),
@@ -212,7 +294,7 @@ class _UploadScreenState extends ConsumerState<UploadScreen> {
                         child: _SourceButton(
                           icon: Symbols.photo_camera,
                           label: 'Camera Scan',
-                          onTap: _pickFile,
+                          onTap: _scanWithCamera,
                         ),
                       ),
                     ],

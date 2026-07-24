@@ -1,4 +1,7 @@
 const pdfParse = require("pdf-parse");
+const { transcribeImage } = require("./imageOcr");
+
+const IMAGE_MIME_TYPES = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png" };
 
 /**
  * Extracts text from a downloaded file buffer, based on its extension.
@@ -17,6 +20,18 @@ async function extractText(buffer, fileName) {
       text: data.text.slice(0, 60000), // guard against huge documents blowing the prompt budget
       pageCount: data.numpages || 0,
       supported: true,
+    };
+  }
+
+  if (IMAGE_MIME_TYPES[ext]) {
+    // Camera Scan uploads land here — transcribed via Groq's vision model
+    // (imageOcr.js) rather than a traditional OCR engine, since it holds
+    // up far better on handwriting and clinical shorthand.
+    const text = await transcribeImage(buffer, IMAGE_MIME_TYPES[ext]);
+    return {
+      text: text.slice(0, 60000),
+      pageCount: text ? 1 : 0,
+      supported: text.length > 0,
     };
   }
 

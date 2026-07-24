@@ -50,6 +50,12 @@ const initializePaystackTransaction = onCall(
         // plan/cycle they paid for — Paystack echoes metadata verbatim on
         // the webhook payload.
         metadata: { uid, cycle },
+        // Never actually loaded — _PaystackCheckoutPageState's
+        // NavigationDelegate intercepts any request to this URL before it
+        // navigates, calls verifyPaystackTransaction, and closes the
+        // WebView. This just gives Paystack somewhere concrete to redirect
+        // to on success so the WebView has something to detect.
+        callback_url: "https://example.com/payment-callback",
       }),
     });
 

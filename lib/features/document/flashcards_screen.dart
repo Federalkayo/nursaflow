@@ -293,19 +293,41 @@ class _CardFace extends StatelessWidget {
         border: Border.all(color: AppColors.outlineVariant.withValues(alpha: 0.5)),
       ),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, color: labelColor, size: 32),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            title,
-            textAlign: TextAlign.center,
-            style: AppTextStyles.headlineMd(),
+          // Long answers/explanations no longer overflow the fixed-height
+          // card — they scroll within this area instead, while staying
+          // vertically centered when the content is short enough to fit
+          // (ConstrainedBox + Center gives us that "centered unless it
+          // needs to scroll" behavior for free).
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(icon, color: labelColor, size: 32),
+                          const SizedBox(height: AppSpacing.sm),
+                          Text(
+                            title,
+                            textAlign: TextAlign.center,
+                            style: AppTextStyles.headlineMd(),
+                          ),
+                          if (subtitle != null) ...[
+                            const SizedBox(height: AppSpacing.sm),
+                            Text(subtitle!, textAlign: TextAlign.center, style: AppTextStyles.bodyMd()),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
           ),
-          if (subtitle != null) ...[
-            const SizedBox(height: AppSpacing.sm),
-            Text(subtitle!, textAlign: TextAlign.center, style: AppTextStyles.bodyMd()),
-          ],
           const SizedBox(height: AppSpacing.md),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),

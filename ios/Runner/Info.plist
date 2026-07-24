@@ -47,5 +47,7 @@
 		<true/>
 		<key>UIStatusBarHidden</key>
 		<false/>
+		<key>NSCameraUsageDescription</key>
+		<string>NursaFlow uses your camera to scan handwritten or printed lecture notes so the AI Tutor can turn them into flashcards and quizzes.</string>
 	</dict>
 </plist>

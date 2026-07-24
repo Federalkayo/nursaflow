@@ -1,13 +1,9 @@
 const crypto = require("crypto");
 const { onRequest } = require("firebase-functions/v2/https");
 const { logger } = require("firebase-functions");
-const admin = require("firebase-admin");
 const { paystackSecretKey } = require("./paystack");
-const { notifyPaymentUpdate } = require("./notifications");
-const { sendEmail, receiptEmailHtml, resendApiKey } = require("./email");
-
-const CYCLE_DAYS = { monthly: 30, annual: 365 };
-const CYCLE_LABEL = { monthly: "Monthly", annual: "Annual" };
+const { resendApiKey } = require("./email");
+const { activateSubscription, CYCLE_DAYS } = require("./subscriptionActivation");
 
 /**
  * Point Paystack's dashboard webhook URL at this function's deployed URL
@@ -15,6 +11,13 @@ const CYCLE_LABEL = { monthly: "Monthly", annual: "Annual" };
  * `charge.success` is the only event that matters; there's no
  * `subscription.*` event to handle since nothing here uses Paystack's
  * Subscription/Plan API.
+ *
+ * This is the source-of-truth activation path: it always fires
+ * (eventually, per Paystack's retry policy) regardless of what the client
+ * does. There's also a faster client-side path — paystackVerify.js,
+ * called by the WebView the instant it sees Paystack's callback redirect —
+ * that races this one for the same reference. See
+ * subscriptionActivation.js for how both are kept safe to fire together.
  */
 const paystackWebhook = onRequest(
   { secrets: [paystackSecretKey, resendApiKey] },
@@ -47,57 +50,22 @@ const paystackWebhook = onRequest(
 
     const { uid, cycle } = event.data?.metadata || {};
     if (!uid || !CYCLE_DAYS[cycle]) {
+      // Expected for Paystack's "Send Test Event" dashboard button, which
+      // fires a generic charge.success with no metadata attached — real
+      // payments always carry { uid, cycle } from initializePaystackTransaction.
       logger.error("paystackWebhook: charge.success missing uid/cycle in metadata", event.data?.metadata);
       return;
     }
 
-    const amount = event.data.amount; // kobo
-    const reference = event.data.reference;
-    const planName = CYCLE_LABEL[cycle];
-    const renewsAt = new Date(Date.now() + CYCLE_DAYS[cycle] * 24 * 60 * 60 * 1000);
-
-    const db = admin.firestore();
     try {
-      await db.collection("users").doc(uid).set(
-        {
-          subscription: {
-            status: "active",
-            plan: cycle,
-            lastPaymentReference: reference,
-            lastPaymentAmount: amount,
-            renewsAt: admin.firestore.Timestamp.fromDate(renewsAt),
-          },
-        },
-        { merge: true },
-      );
+      await activateSubscription({
+        uid,
+        cycle,
+        reference: event.data.reference,
+        amount: event.data.amount,
+      });
     } catch (err) {
-      logger.error(`paystackWebhook: Firestore update failed for user ${uid}`, err);
-      return; // don't send a receipt for a subscription that didn't actually save
-    }
-
-    await notifyPaymentUpdate(uid, { status: "activated", planName }).catch((err) =>
-      logger.warn(`paystackWebhook: push notify failed for user ${uid}`, err),
-    );
-
-    try {
-      const userDoc = await db.collection("users").doc(uid).get();
-      const { email, name } = userDoc.data() || {};
-      if (email) {
-        await sendEmail({
-          to: email,
-          subject: "Payment received — NursaFlow Premium",
-          html: receiptEmailHtml({
-            name,
-            amount,
-            planName,
-            reference,
-            renewsAt: renewsAt.toDateString(),
-          }),
-          category: "receipt",
-        });
-      }
-    } catch (err) {
-      logger.warn(`paystackWebhook: receipt email failed for user ${uid}`, err);
+      logger.error(`paystackWebhook: activation failed for user ${uid}`, err);
     }
   },
 );

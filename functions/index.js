@@ -10,6 +10,7 @@ const { sendExpiryReminders } = require("./src/expiryReminder");
 const { onUserCreated } = require("./src/onUserCreated");
 const { initializePaystackTransaction } = require("./src/paystack");
 const { paystackWebhook } = require("./src/paystackWebhook");
+const { verifyPaystackTransaction } = require("./src/paystackVerify");
 
 exports.analyzeDocument = analyzeDocument;
 exports.askTutor = askTutor;
@@ -20,3 +21,4 @@ exports.sendExpiryReminders = sendExpiryReminders;
 exports.onUserCreated = onUserCreated;
 exports.initializePaystackTransaction = initializePaystackTransaction;
 exports.paystackWebhook = paystackWebhook;
+exports.verifyPaystackTransaction = verifyPaystackTransaction;
