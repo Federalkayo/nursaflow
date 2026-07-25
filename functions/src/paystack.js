@@ -8,8 +8,8 @@ const paystackSecretKey = defineSecret("PAYSTACK_SECRET_KEY");
 // PlanCatalog — amounts are in kobo (NGN × 100), which is what Paystack's
 // API expects.
 const PLAN_AMOUNTS_KOBO = {
-  monthly: 2000 * 100,
-  annual: 16000 * 100,
+  monthly: 1500 * 100,
+  annual: 12000 * 100,
 };
 /**
  * This is a one-time-charge model, NOT a Paystack recurring Subscription —
@@ -71,4 +71,4 @@ const initializePaystackTransaction = onCall(
   },
 );
 
-module.exports = { initializePaystackTransaction, paystackSecretKey };
+module.exports = { initializePaystackTransaction, paystackSecretKey, PLAN_AMOUNTS_KOBO };

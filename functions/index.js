@@ -11,6 +11,7 @@ const { onUserCreated } = require("./src/onUserCreated");
 const { initializePaystackTransaction } = require("./src/paystack");
 const { paystackWebhook } = require("./src/paystackWebhook");
 const { verifyPaystackTransaction } = require("./src/paystackVerify");
+const { joinWaitlist } = require("./src/waitlist");
 
 exports.analyzeDocument = analyzeDocument;
 exports.askTutor = askTutor;
@@ -22,3 +23,4 @@ exports.onUserCreated = onUserCreated;
 exports.initializePaystackTransaction = initializePaystackTransaction;
 exports.paystackWebhook = paystackWebhook;
 exports.verifyPaystackTransaction = verifyPaystackTransaction;
+exports.joinWaitlist = joinWaitlist;

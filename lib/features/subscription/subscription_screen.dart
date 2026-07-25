@@ -36,8 +36,8 @@ class PlanCatalog {
     'Offline flashcard review',
   ];
 
-  static const monthlyPrice = 2000; // NGN
-  static const annualPrice = 16000; // NGN (33% off vs paying monthly × 12)
+  static const monthlyPrice = 1500; // NGN
+  static const annualPrice = 12000; // NGN (33% off vs paying monthly × 12)
 }
 
 class SubscriptionScreen extends StatefulWidget {
@@ -330,7 +330,7 @@ class _PlanCard extends StatelessWidget {
   final bool isLoading;
   final String? badge;
   // Shown directly under the price — used to spell out the total amount
-  // actually charged (e.g. "₦16,000 billed once a year") next to the
+  // actually charged (e.g. "₦12,000 billed once a year") next to the
   // per-month figure above, so the per-month number can't be mistaken for
   // what gets charged today.
   final String? subCaption;

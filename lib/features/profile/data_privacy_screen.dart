@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,7 +10,6 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
-import '../../core/widgets/app_buttons.dart';
 import '../../core/widgets/app_card.dart';
 import '../../core/widgets/responsive_page.dart';
 import 'models/privacy_actions.dart';
@@ -44,14 +45,14 @@ class _DataPrivacyScreenState extends State<DataPrivacyScreen> {
 
     setState(() => _exporting = true);
     try {
-      final json = await exportUserDataAsJson(uid);
+      final data = await exportUserData(uid);
       if (!mounted) return;
       await showModalBottomSheet(
         context: context,
         useRootNavigator: true,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
-        builder: (context) => _ExportPreviewSheet(json: json),
+        builder: (context) => _ExportPreviewSheet(data: data),
       );
     } catch (e) {
       if (mounted) {
@@ -206,57 +207,161 @@ class _DataPrivacyScreenState extends State<DataPrivacyScreen> {
 }
 
 class _ExportPreviewSheet extends StatelessWidget {
-  const _ExportPreviewSheet({required this.json});
+  const _ExportPreviewSheet({required this.data});
 
-  final String json;
+  final Map<String, dynamic> data;
+
+  int _countOf(String key) {
+    final list = data[key];
+    return list is List ? list.length : 0;
+  }
 
   @override
   Widget build(BuildContext context) {
+    final account = (data['account'] as Map?) ?? {};
+    final profile = (data['profile'] as Map?) ?? {};
+    final name = account['name'] as String? ?? 'Not set';
+    final email = account['email'] as String? ?? 'Not set';
+    final school = (profile['school'] as String?)?.trim();
+    final rawJson = const JsonEncoder.withIndent('  ').convert(data);
+
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
       child: Container(
-        constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.8),
-        padding: const EdgeInsets.all(AppSpacing.lg),
+        constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.85),
         decoration: const BoxDecoration(
           color: AppColors.surfaceContainerLowest,
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 36,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: AppSpacing.md),
-                decoration: BoxDecoration(
-                  color: AppColors.outlineVariant,
-                  borderRadius: BorderRadius.circular(2),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: AppSpacing.md),
+                  decoration: BoxDecoration(
+                    color: AppColors.outlineVariant,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
               ),
-            ),
-            Text('Your Data', style: AppTextStyles.headlineMd()),
-            const SizedBox(height: AppSpacing.sm),
-            Flexible(
-              child: SingleChildScrollView(
-                child: SelectableText(json, style: AppTextStyles.bodySm()),
+              Text('Your Data', style: AppTextStyles.headlineMd()),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                "Here's a plain-language summary of what we store for you.",
+                style: AppTextStyles.bodySm(),
               ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            PrimaryButton(
-              label: 'Copy to Clipboard',
-              icon: Symbols.copy_all,
-              onPressed: () {
-                Clipboard.setData(ClipboardData(text: json));
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Copied to clipboard.')),
-                );
-              },
-            ),
-            const SizedBox(height: AppSpacing.sm),
-          ],
+              const SizedBox(height: AppSpacing.md),
+
+              AppCard(
+                padding: EdgeInsets.zero,
+                child: Column(
+                  children: [
+                    _SummaryRow(icon: Symbols.person, label: 'Name', value: name),
+                    const Divider(height: 1, indent: 52),
+                    _SummaryRow(icon: Symbols.mail, label: 'Email', value: email),
+                    if (school != null && school.isNotEmpty) ...[
+                      const Divider(height: 1, indent: 52),
+                      _SummaryRow(icon: Symbols.school, label: 'School', value: school),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+
+              AppCard(
+                padding: EdgeInsets.zero,
+                child: Column(
+                  children: [
+                    _SummaryRow(
+                      icon: Symbols.description,
+                      label: 'Documents uploaded',
+                      value: '${_countOf('documents')}',
+                    ),
+                    const Divider(height: 1, indent: 52),
+                    _SummaryRow(
+                      icon: Symbols.calendar_month,
+                      label: 'Planner entries',
+                      value: '${_countOf('plannerEntries')}',
+                    ),
+                    const Divider(height: 1, indent: 52),
+                    _SummaryRow(
+                      icon: Symbols.notifications,
+                      label: 'Notifications',
+                      value: '${_countOf('notifications')}',
+                    ),
+                    const Divider(height: 1, indent: 52),
+                    _SummaryRow(
+                      icon: Symbols.local_fire_department,
+                      label: 'Study log entries',
+                      value: '${_countOf('studyLog')}',
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+
+              ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                childrenPadding: EdgeInsets.zero,
+                title: Text('View raw data (advanced)', style: AppTextStyles.labelLg()),
+                children: [
+                  Container(
+                    width: double.infinity,
+                    constraints: const BoxConstraints(maxHeight: 260),
+                    padding: const EdgeInsets.all(AppSpacing.sm),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceContainerLowest,
+                      border: Border.all(color: AppColors.outlineVariant),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: SingleChildScrollView(
+                      child: SelectableText(rawJson, style: AppTextStyles.bodySm()),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: rawJson));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Copied to clipboard.')),
+                      );
+                    },
+                    icon: const Icon(Symbols.copy_all, size: 18),
+                    label: const Text('Copy raw JSON'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.sm),
+            ],
+          ),
         ),
+      ),
+    );
+  }
+}
+
+class _SummaryRow extends StatelessWidget {
+  const _SummaryRow({required this.icon, required this.label, required this.value});
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Icon(icon, color: AppColors.onSurfaceVariant, size: 22),
+      title: Text(label, style: AppTextStyles.bodySm()),
+      trailing: Text(
+        value,
+        style: AppTextStyles.labelLg(),
+        overflow: TextOverflow.ellipsis,
       ),
     );
   }

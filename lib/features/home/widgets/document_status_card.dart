@@ -17,26 +17,28 @@ class DocumentStatusCard extends StatelessWidget {
 
     return AppCard(
       onTap: isReady ? () => context.push('/document/${document.id}/summary') : null,
+      padding: const EdgeInsets.all(AppSpacing.sm),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Row(
             children: [
               Container(
-                width: 36,
-                height: 36,
+                width: 28,
+                height: 28,
                 decoration: BoxDecoration(
                   color: AppColors.primary.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Icon(Symbols.description,
-                    color: AppColors.primary, size: 18),
+                    color: AppColors.primary, size: 15),
               ),
               const Spacer(),
               _StatusPill(isReady: isReady),
             ],
           ),
-          const SizedBox(height: AppSpacing.sm),
+          const SizedBox(height: AppSpacing.xs),
           Text(
             document.title,
             maxLines: 2,
@@ -47,11 +49,12 @@ class DocumentStatusCard extends StatelessWidget {
           Text(document.course, style: AppTextStyles.bodySm(), maxLines: 1, overflow: TextOverflow.ellipsis),
           const Spacer(),
           if (isReady) ...[
+            const SizedBox(height: AppSpacing.xs),
             ClipRRect(
               borderRadius: BorderRadius.circular(4),
               child: LinearProgressIndicator(
                 value: document.progress,
-                minHeight: 5,
+                minHeight: 4,
               ),
             ),
             const SizedBox(height: 4),
@@ -60,7 +63,7 @@ class DocumentStatusCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    '${(document.progress * 100).round()}% mastered',
+                    '${(document.progress * 100).round()}%',
                     style: AppTextStyles.labelSm(),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -68,6 +71,7 @@ class DocumentStatusCard extends StatelessWidget {
                 ),
                 const SizedBox(width: AppSpacing.xs),
                 Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     _QuickIcon(
                       icon: Symbols.style,
@@ -82,7 +86,9 @@ class DocumentStatusCard extends StatelessWidget {
               ],
             ),
           ] else
-            Text('Analyzing document…', style: AppTextStyles.bodySm(color: AppColors.secondary)),
+            Text('Analyzing…',
+                maxLines: 1,
+                style: AppTextStyles.bodySm(color: AppColors.secondary)),
         ],
       ),
     );
@@ -124,8 +130,8 @@ class _QuickIcon extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
       child: Padding(
-        padding: const EdgeInsets.all(4),
-        child: Icon(icon, size: 16, color: AppColors.primary),
+        padding: const EdgeInsets.all(3),
+        child: Icon(icon, size: 15, color: AppColors.primary),
       ),
     );
   }
