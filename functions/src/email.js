@@ -10,11 +10,11 @@ const resendApiKey = defineSecret("RESEND_API_KEY");
 // Until the domain's verified, onboarding@resend.dev works with zero setup
 // but can only deliver to the email on your own Resend account.
 const FROM_ADDRESSES = {
-  welcome: "NursaFlow <onboarding@resend.dev>",
-  receipt: "NursaFlow Billing <onboarding@resend.dev>",
-  reminder: "NursaFlow <onboarding@resend.dev>",
-  report: "NursaFlow <onboarding@resend.dev>",
-  account: "NursaFlow <onboarding@resend.dev>",
+  welcome: "NursaFlow <hello@nursaflow.online>",
+  receipt: "NursaFlow Billing <billing@nursaflow.online>",
+  reminder: "NursaFlow <hello@nursaflow.online>",
+  report: "NursaFlow <hello@nursaflow.online>",
+  account: "NursaFlow <hello@nursaflow.online>",
 };
 
 const ACCENT = "#0F766E"; // matches the teal used for primary buttons in-app

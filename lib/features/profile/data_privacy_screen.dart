@@ -16,7 +16,7 @@ import 'models/privacy_actions.dart';
 
 // TODO(kayode): point this at the real hosted Privacy Policy page once
 // it's live, e.g. https://nursaflow.app/privacy
-const String kPrivacyPolicyUrl = 'https://nursaflow.app/privacy';
+const String kPrivacyPolicyUrl = 'https://nursaflow.online/privacy.html';
 
 class DataPrivacyScreen extends StatefulWidget {
   const DataPrivacyScreen({super.key});
