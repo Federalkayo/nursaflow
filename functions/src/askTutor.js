@@ -20,6 +20,12 @@ const {
 const IMAGE_REQUEST_PATTERN =
   /\b(draw|illustrate|sketch)\b|\b(picture|image)\s+of\b|\bshow\s+me\s+(a|an)?\s*(picture|image|diagram|illustration)\b|\bgenerate\s+(an?\s+)?(picture|image|diagram|illustration)\b/i;
 
+// Matches an explicit chapter reference in the student's message, e.g.
+// "chapter 4", "Chapter 12", "ch 4". Deliberately numeric-only for now —
+// word-number references ("chapter four") aren't handled yet, same
+// limitation as before this feature existed (no chapter lookup at all).
+const CHAPTER_REFERENCE_PATTERN = /\bch(?:apter)?\.?\s*(\d+)\b/i;
+
 function extractImagePrompt(message) {
   // Strip the common trigger phrasing so the leftover is a cleaner subject
   // for the image prompt, e.g. "draw me a diagram of the nephron" -> "the nephron".
@@ -65,6 +71,68 @@ function deriveImageSubject({ userMessage, replyText, documentContext }) {
   const topic = titleMatch?.[1];
 
   return [topic, firstSentence].filter(Boolean).join(" — ") || userMessage;
+}
+
+/**
+ * Builds the documentContext string passed into buildTutorPrompt. Reads the
+ * whole-document summary fields as before, and additionally — when the
+ * student's message names a specific chapter number and that document has
+ * persisted chapter chunks (written by analyzeDocument.js at upload time,
+ * only present for long, multi-chapter reference documents) — pulls in the
+ * actual extracted text for that chapter. This is what lets the Tutor
+ * answer chapter-specific questions accurately instead of guessing from the
+ * whole-document summary alone, which is too coarse for that.
+ *
+ * If the student asks about a chapter number but no matching chunk exists
+ * (e.g. older documents uploaded before this feature, or a short
+ * single-topic document with no chapter structure), we explicitly tell the
+ * model that in the context block, so it says "I don't have that section"
+ * rather than fabricating an answer — see the corresponding instruction
+ * added to buildTutorPrompt in prompts.js.
+ */
+async function buildDocumentContext(docRef, userMessage) {
+  const docSnap = await docRef.get();
+  if (!docSnap.exists) return null;
+
+  const d = docSnap.data();
+  const parts = [];
+  if (d.title) parts.push(`Title: ${d.title}`);
+  if (d.course) parts.push(`Course: ${d.course}`);
+  if (d.clinicalOverview) parts.push(`Overview: ${d.clinicalOverview}`);
+  if (Array.isArray(d.takeaways) && d.takeaways.length) {
+    parts.push(`Key takeaways: ${d.takeaways.join("; ")}`);
+  }
+
+  const chapterMatch = userMessage.match(CHAPTER_REFERENCE_PATTERN);
+  if (chapterMatch) {
+    const chapterNumber = parseInt(chapterMatch[1], 10);
+
+    if (d.hasChapterContent) {
+      const chapterSnap = await docRef
+        .collection("chapters")
+        .where("chapterNumber", "==", chapterNumber)
+        .limit(1)
+        .get();
+
+      if (!chapterSnap.empty) {
+        const chapterData = chapterSnap.docs[0].data();
+        const headingSuffix = chapterData.heading ? ` (${chapterData.heading})` : "";
+        parts.push(
+          `Actual extracted content of Chapter ${chapterNumber}${headingSuffix} from the source document — base any answer about this specific chapter strictly on this text, do not add facts beyond it:\n"""\n${chapterData.text || ""}\n"""`,
+        );
+      } else {
+        parts.push(
+          `Note: the student is asking about Chapter ${chapterNumber}, but this document does not have that many chapters, or the chapter numbering doesn't match. Do not guess at its contents — tell the student you don't have that specific chapter and ask them to check the number.`,
+        );
+      }
+    } else {
+      parts.push(
+        `Note: the student is asking about Chapter ${chapterNumber}, but detailed per-chapter content isn't available for this document (it may be a short document with no chapter structure, or was uploaded before chapter-level lookup was added). Do not guess at what that chapter might contain — answer from the Overview/Key takeaways above only, and be upfront that you don't have that section's specific details.`,
+      );
+    }
+  }
+
+  return parts.join("\n");
 }
 
 /**
@@ -128,21 +196,14 @@ const askTutor = onCall(
       ? userRef.collection("documents").doc(documentId).collection("messages")
       : userRef.collection("general_messages");
 
-    // 1. Pull document context, if this chat is scoped to a document.
+    // 1. Pull document context, if this chat is scoped to a document. See
+    // buildDocumentContext() above for the chapter-lookup behavior.
     let documentContext = null;
     if (documentId) {
-      const docSnap = await userRef.collection("documents").doc(documentId).get();
-      if (docSnap.exists) {
-        const d = docSnap.data();
-        const parts = [];
-        if (d.title) parts.push(`Title: ${d.title}`);
-        if (d.course) parts.push(`Course: ${d.course}`);
-        if (d.clinicalOverview) parts.push(`Overview: ${d.clinicalOverview}`);
-        if (Array.isArray(d.takeaways) && d.takeaways.length) {
-          parts.push(`Key takeaways: ${d.takeaways.join("; ")}`);
-        }
-        documentContext = parts.join("\n");
-      }
+      documentContext = await buildDocumentContext(
+        userRef.collection("documents").doc(documentId),
+        userMessage,
+      );
     }
 
     // 2. Pull recent chat history for conversational context (last 10 turns).

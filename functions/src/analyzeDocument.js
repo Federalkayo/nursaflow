@@ -10,6 +10,7 @@ const { fallbackAnalysis } = require("./fallback");
 const { generateIllustration } = require("./imageGen");
 const { createNotification } = require("./notifications");
 const { isPremiumActive, FREE_DOCUMENT_LIMIT } = require("./planLimits");
+const { splitIntoChapters } = require("./chunkText");
 
 /**
  * Fires whenever a new document is created at
@@ -20,9 +21,9 @@ const { isPremiumActive, FREE_DOCUMENT_LIMIT } = require("./planLimits");
  *
  * Looks for the uploaded source file in Storage at
  *   users/{userId}/documents/{documentId}/<original filename>
- * If found and it's a PDF, extracts real text and grounds Groq in it.
- * Otherwise, falls back to generating course-appropriate content from the
- * title/course alone.
+ * If found and it's a PDF, DOCX, or scannable image, extracts real text and
+ * grounds Groq in it. Otherwise, falls back to generating course-appropriate
+ * content from the title/course alone.
  */
 const analyzeDocument = onDocumentCreated(
   {
@@ -81,6 +82,7 @@ const analyzeDocument = onDocumentCreated(
 
     // 1. Try to locate and read the uploaded source file from Storage.
     let sourceText = "";
+    let fullSourceText = "";
     let hasSourceText = false;
     let pageCount = data.pageCount || 0;
 
@@ -96,6 +98,7 @@ const analyzeDocument = onDocumentCreated(
         const extracted = await extractText(buffer, file.name);
         if (extracted.supported && extracted.text.trim().length > 0) {
           sourceText = extracted.text;
+          fullSourceText = extracted.fullText || extracted.text;
           hasSourceText = true;
           if (extracted.pageCount) pageCount = extracted.pageCount;
         }
@@ -104,10 +107,21 @@ const analyzeDocument = onDocumentCreated(
       logger.warn(`Could not read source file for ${documentId}, falling back to course-based generation`, err);
     }
 
-    // 2. Call Groq.
+    // 2. Call Groq. Pass the FULL extracted text (fullSourceText, not the
+    // pre-capped `sourceText`/`extracted.text`) — buildAnalysisPrompt now
+    // handles budgeting internally via buildSourceExcerpt (see prompts.js),
+    // which needs to see every chapter to sample proportionally across the
+    // whole document. Passing a pre-truncated prefix here would only ever
+    // let it see the opening chapters, reintroducing the same class of bug
+    // this feature was built to fix — just one level up the call chain.
     let analysis;
     try {
-      const prompt = buildAnalysisPrompt({ title, course, sourceText, hasSourceText });
+      const prompt = buildAnalysisPrompt({
+        title,
+        course,
+        sourceText: hasSourceText ? fullSourceText : sourceText,
+        hasSourceText,
+      });
       analysis = await generateJson(prompt);
     } catch (err) {
       logger.error(`Groq analysis failed for ${documentId}, using fallback content`, err);
@@ -143,6 +157,15 @@ const analyzeDocument = onDocumentCreated(
       }
     }
 
+    // 3b. Split the full extracted text into per-chapter chunks (only
+    // meaningfully splits documents that actually have several "Chapter N"
+    // headings — a normal single-topic lecture upload comes back as one
+    // chunk and nothing downstream changes for it). This is what lets the
+    // AI Tutor answer chapter-specific questions ("chapter 4...") from the
+    // document's real content instead of the whole-document summary alone,
+    // which is too coarse for long, multi-chapter reference uploads.
+    const chapterChunks = hasSourceText ? splitIntoChapters(fullSourceText) : [];
+
     // 4. Write the summary fields back onto the document + mark ready.
     await docRef.update({
       status: "ready",
@@ -156,11 +179,17 @@ const analyzeDocument = onDocumentCreated(
       clinicalRedFlags: analysis.clinicalRedFlags || [],
       takeaways: analysis.takeaways || [],
       mermaid: analysis.mermaid || '',
+      hasChapterContent: chapterChunks.length > 1,
       ...(illustrationPath ? { illustrationPath } : {}),
       analyzedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    // 5. Write flashcards + quiz as subcollections (batched for one round trip).
+    // 5. Write flashcards + quiz + chapter chunks as subcollections
+    // (batched for one round trip). Chapter chunks are only written when
+    // there's more than one — a single-chunk result just means "whole
+    // document as one unit," which the Tutor already has via
+    // clinicalOverview/takeaways above, so persisting it separately would
+    // be redundant.
     const batch = admin.firestore().batch();
 
     for (const card of analysis.flashcards || []) {
@@ -185,6 +214,19 @@ const analyzeDocument = onDocumentCreated(
       });
     }
 
+    if (chapterChunks.length > 1) {
+      for (const chunk of chapterChunks) {
+        const ref = docRef.collection("chapters").doc();
+        batch.set(ref, {
+          index: chunk.index,
+          chapterNumber: chunk.chapterNumber,
+          heading: chunk.heading || "",
+          text: chunk.text || "",
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+    }
+
     await batch.commit();
 
     await createNotification(userId, {
@@ -194,7 +236,10 @@ const analyzeDocument = onDocumentCreated(
       refId: documentId,
     });
 
-    logger.info(`Finished analyzing document ${documentId}`);
+    logger.info(`Finished analyzing document ${documentId}`, {
+      hasSourceText,
+      chapterCount: chapterChunks.length > 1 ? chapterChunks.length : 0,
+    });
   }
 );
 

@@ -1,3 +1,70 @@
+const { splitIntoChapters } = require("./chunkText");
+
+// Groq's free tier caps requests at 12,000 tokens/minute for
+// llama-3.3-70b-versatile (shared across whatever else is calling the same
+// model in this org, e.g. concurrent askTutor calls). generateJson already
+// reserves JSON_MAX_TOKENS (4096) for the output, and the instructions/schema
+// portion of this prompt runs roughly 800-1000 tokens on its own, so the
+// source text itself needs to fit in a modest budget or the request gets
+// rejected outright with a 413 before Groq ever generates anything (as
+// opposed to a truncated/malformed response, which is a different failure
+// mode that jsonrepair handles). ~18,000 characters of English prose is
+// roughly 3,500-4,000 tokens, which leaves comfortable headroom under the
+// 12,000 cap even accounting for concurrent usage.
+const MAX_SOURCE_CHARS = 18000;
+// Floor so that even a document with an unusually large number of chapters
+// doesn't get sliced into useless few-word fragments per chapter.
+const MIN_PER_CHAPTER_CHARS = 250;
+
+/**
+ * Builds the text that actually gets embedded in the analysis prompt for a
+ * document with extracted source text. For a normal single-topic upload
+ * (no "Chapter N" structure, or short enough to fit as-is) this is just the
+ * text itself, capped to MAX_SOURCE_CHARS. For a long, multi-chapter
+ * reference document, naively taking the first MAX_SOURCE_CHARS characters
+ * would only ever show Groq the first few chapters — since the prompt
+ * explicitly asks for flashcards/mainTopic to reflect the document's full
+ * breadth, that would silently bias every broad-reference analysis toward
+ * whatever happens to be at the start. Instead, in that case, a bounded
+ * excerpt is sampled from every detected chapter so the model actually sees
+ * the whole document's scope within the same character budget.
+ * @param {string} sourceText - full, untruncated extracted document text
+ * @returns {{ text: string, wasSampled: boolean }}
+ */
+function buildSourceExcerpt(sourceText) {
+  if (sourceText.length <= MAX_SOURCE_CHARS) {
+    return { text: sourceText, wasSampled: false };
+  }
+
+  const chunks = splitIntoChapters(sourceText);
+
+  // Fewer than MIN_CHAPTERS_TO_SPLIT chapter headings (in chunkText.js) means
+  // splitIntoChapters already returned a single, already-capped chunk — for
+  // this case a straightforward truncation is the correct behavior, it's
+  // just one long document, not a multi-chapter reference.
+  if (chunks.length <= 1) {
+    return { text: sourceText.slice(0, MAX_SOURCE_CHARS), wasSampled: true };
+  }
+
+  const perChapterChars = Math.max(
+    MIN_PER_CHAPTER_CHARS,
+    Math.floor(MAX_SOURCE_CHARS / chunks.length)
+  );
+
+  const sampled = chunks
+    .map((c) => {
+      const label = c.chapterNumber
+        ? `Chapter ${c.chapterNumber}${c.heading ? ": " + c.heading : ""}`
+        : c.heading || `Section ${c.index + 1}`;
+      return `[${label}]\n${c.text.slice(0, perChapterChars)}`;
+    })
+    .join("\n\n");
+
+  // Label overhead can push slightly over budget for documents with many
+  // chapters — hard cap as a final safety net so we never exceed it.
+  return { text: sampled.slice(0, MAX_SOURCE_CHARS), wasSampled: true };
+}
+
 /**
  * Builds the prompt for turning a lecture document (or, when text isn't
  * available, just a title + course) into NursaFlow's summary/flashcard/quiz
@@ -8,20 +75,31 @@
  * @param {{ title: string, course: string, sourceText: string, hasSourceText: boolean }} params
  */
 function buildAnalysisPrompt({ title, course, sourceText, hasSourceText }) {
-  const contextBlock = hasSourceText
-    ? `Base your output strictly on the following lecture material. Do not invent facts not supported by it:\n\n"""\n${sourceText}\n"""`
-    : `No extractable text was available for this upload (likely a slide deck or scanned document format not yet supported). Generate clinically accurate, exam-relevant nursing content appropriate for a course titled "${course}" and a document titled "${title}". Be conservative and stick to well-established nursing curriculum content.`;
-
   // Heuristic: detect whether this upload is a broad, multi-chapter reference
   // document (e.g. a textbook-style note spanning many distinct clinical
   // subjects) rather than a single focused lecture. Long documents with many
   // "Chapter N" / numbered-heading markers are the giveaway — a normal
   // lecture PDF rarely has more than a handful of headings.
+  // Computed on the full, untruncated sourceText so this detection stays
+  // accurate regardless of how much gets sampled/truncated below.
   const chapterHeadingMatches = hasSourceText
     ? (sourceText.match(/\bChapter\s+\d+\b/gi) || []).length
     : 0;
   const isLikelyBroadReference =
     hasSourceText && (sourceText.length > 15000 || chapterHeadingMatches >= 6);
+
+  let contextBlock;
+  if (hasSourceText) {
+    const { text: excerptText, wasSampled } = buildSourceExcerpt(sourceText);
+    const truncationNote = wasSampled
+      ? isLikelyBroadReference
+        ? "\n\n(Note: this document is long, so what follows is a representative excerpt sampled from every chapter/section rather than the full text — base your analysis on the overall scope this shows you.)"
+        : "\n\n(Note: this document is long, so what follows is truncated to an initial excerpt rather than the full text.)"
+      : "";
+    contextBlock = `Base your output strictly on the following lecture material. Do not invent facts not supported by it:\n\n"""\n${excerptText}\n"""${truncationNote}`;
+  } else {
+    contextBlock = `No extractable text was available for this upload (likely a slide deck or scanned document format not yet supported). Generate clinically accurate, exam-relevant nursing content appropriate for a course titled "${course}" and a document titled "${title}". Be conservative and stick to well-established nursing curriculum content.`;
+  }
 
   const mainTopicInstruction = isLikelyBroadReference
     ? `this document appears to be a BROAD, MULTI-CHAPTER REFERENCE covering many distinct clinical subjects rather than a single focused lecture topic (it has ${chapterHeadingMatches} chapter-style headings and/or is unusually long). Do NOT pick a single recurring keyword or an example that merely appears in several unrelated chapters — that will misrepresent the document. Instead set this to the overarching discipline or course-level subject the document as a whole belongs to, 2-5 words (e.g. 'Medical Laboratory Science', 'Pharmacology Fundamentals', 'Medical-Surgical Nursing'). Base this on the document's actual title/scope and the breadth of topics covered, not on any single section`
@@ -129,6 +207,18 @@ Respond as the Tutor. Format your reply for readability, the way a good tutor wr
 - When listing multiple items, causes, types, or steps, use a bullet on its own line starting with "• " (a plain bullet character), one item per line — not a comma-separated sentence.
 - Do NOT use markdown syntax like **bold**, # headers, or numbered "1." lists with periods — the app displays this as plain text, so that syntax would show up as literal stray characters instead of formatting. Structure comes from line breaks and "• " bullets only.
 - Keep it focused: 2-5 short paragraphs/bullet groups unless the student explicitly asks for more detail.
+
+IMPORTANT — do not speculate about the uploaded document's specific contents.
+If the student asks about a specific section, chapter, or detail of their
+document and the context above does not actually contain that information
+(including if it contains a "Note:" saying that content isn't available),
+say so plainly and briefly rather than guessing. Never write phrases like
+"likely covers", "may include", or "probably discusses" about the student's
+own uploaded document — either you have the real content and can state it
+directly, or you don't and should say you don't have that specific section
+available yet. This restriction is only about the student's uploaded
+document; you can still answer general nursing knowledge questions normally
+using what you already know.
 
 If (and only if) the student is asking about a PROCESS, MECHANISM, CYCLE, or
 STEP SEQUENCE (e.g. "explain blood circulation", "walk me through the nursing
